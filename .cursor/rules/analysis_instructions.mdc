@@ -1,0 +1,189 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## Battery Cycle Stability Data Analysis Script
+
+This document provides a high-level roadmap and developer instructions for building a Python-based tool to:
+
+1. Parse continuous galvanostatic data (voltage, current, timestamp) from CSV
+2. Split the data into individual charge or discharge cycles
+3. Identify end-of-cycle points and extract cycle parameters
+4. Compute capacity per cycle (Ah) and specific capacity (mAh/g)
+5. Provide a simple local GUI for data upload, parameter input, and result visualizations
+
+---
+
+### 1. Prerequisites
+
+* Python 3.8+ environment
+* Key libraries:
+
+  * `pandas` for data handling
+  * `numpy` & `scipy` for numerical operations
+  * `streamlit` (or `panel`) for GUI
+  * (Optional) `dask`/`vaex` for out-of-core processing if datasets exceed memory
+
+### 2. Input File Structure & Header Parsing
+
+The raw data files exported from the Basytec Battery Test System include metadata headers prefixed with `~`. The script should:
+
+1. **Skip or capture metadata lines**: Any line starting with `~` should be read until the header terminator (the first non-`~` line).
+2. **Extract key metadata** for use in reporting (optional):
+
+   * Date and time of data conversion (e.g. `19.05.2025 14:36:50`)
+   * Test name, battery ID, test plan, start/end timestamps
+   * Operator names
+
+**Example header lines:**
+
+```
+~Resultfile from Basytec Battery Test System
+~Date and Time of Data Converting: 19.05.2025 14:36:50
+~
+~Name of Test: KM_KMFO_721_F1_E5 50mAhg 2xF 05052025
+~Battery: KM-KMFO-721-F1E5(16) 50mAh 2xF
+~Testplan: NEU KMO 3cyc RC 4h wetting 1000 cycles -1V.pln
+~Start of Test: 05.05.2025 16:35:43
+~End of Test: 15.05.2025 13:43:08
+~Operator (Test): simon schauer
+~Operator (Data converting): simon schauer
+~
+~Time[h] DataSet DateTime t-Step[h] t-Set[h] t-Cyc[h] Line Command U[V] I[A] Ah[Ah] Ah-Cyc-Charge-0 Ah-Cyc-Discharge-0 Ah-Step Ah-Set Ah-Ch-Set Ah-Dis-Set Wh[Wh/kg] T1[°C] R-DC Cyc-Count Count State
+```
+
+### 3. Data format assumptions (after header)
+
+* Input columns (space- or tab-delimited after header):
+
+  * `Time[h]` (float) – elapsed time in hours
+  * `DataSet` (int) – sequential dataset counter
+  * `DateTime` (string) – timestamp of measurement
+  * `t-Step[h]`, `t-Set[h]`, `t-Cyc[h]` – step, set, and cycle times (hours)
+  * `Line` (int) – line number
+  * `Command` (string) – e.g. `charge`, `discharge`, `pause`
+  * `U[V]` (float) – voltage in volts
+  * `I[A]` (float) – current in amps
+  * `Ah[Ah]` (cumulative ampere-hours)
+  * `Ah-Cyc-Charge-0`, `Ah-Cyc-Discharge-0` – cumulative per-cycle Ah
+  * `Wh[Wh/kg]`, `T1[°C]`, `R-DC`, `Cyc-Count`, `Count`, `State`
+
+* Rows are ordered chronologically by `Time[h]`.
+
+### 4. Core processing steps
+
+1. **Load CSV & strip metadata**
+
+   ```python
+   with open(file_path) as f:
+       # skip lines starting with '~'
+       lines = itertools.dropwhile(lambda L: L.startswith('~'), f)
+       df = pd.read_csv(lines, sep=r'\s+', engine='python')
+   ```
+
+2. **Detect cycle boundaries**
+
+   * Option A: Use `State` column (e.g. find rows where `State == 2`)
+   * Option B: Zero-crossings of `I[A]` sign
+
+   ```python
+   bounds = df.index[df['State'] == 2].to_list()
+   ```
+
+3. **Filter to discharge cycles**
+
+   ```python
+   df_discharge = df[df['Command'].str.lower() == 'discharge']
+   ```
+
+4. **Assign cycle numbers**
+
+   ```python
+   df_discharge['CycleNumber'] = (df_discharge['State'] == 2).cumsum()
+   ```
+
+5. **Compute capacity per cycle**
+
+   ```python
+   results = []
+   for cycle, segment in df_discharge.groupby('CycleNumber'):
+       t_h = segment['Time[h]']           # already in hours
+       Q_Ah = integrate.trapz(segment['I[A]'], t_h)
+       results.append({'Cycle': cycle, 'Capacity_Ah': abs(Q_Ah)})
+   res_df = pd.DataFrame(results)
+   ```
+
+6. **Compute specific capacity**
+
+   ```python
+   res_df['Specific_mAh_per_g'] = res_df['Capacity_Ah'] * 1000 / active_material_weight_g
+   ```
+
+7. **Assemble metadata and results**
+
+   * Optionally include test start/end times, test name, operator from captured header.
+
+### 5. GUI design (Streamlit)
+
+* **File uploader**: Accept raw `.txt` or `.csv` file
+* **Parameter input**:
+
+  * Active material weight (g)
+  * Boundary detection method
+* **Process button**
+* **Output**:
+
+  * Dataframe of cycle results
+  * Download link for results CSV
+  * Plots: Capacity vs. Cycle, (optional) differential capacity dQ/dV
+
+#### Example Streamlit layout
+
+```python
+import streamlit as st
+import itertools
+import pandas as pd
+from scipy import integrate
+
+st.title("Battery Cycle Analyzer")
+
+# Inputs
+g = st.number_input("Active material weight (g)", value=1.0)
+method = st.selectbox("Boundary detection", ["State-based", "Zero-crossing"])
+file = st.file_uploader("Upload test output file", type=["txt", "csv"])
+
+if file and st.button("Analyze"):
+    lines = itertools.dropwhile(lambda L: L.startswith('~'), file.getvalue().decode().splitlines(True))
+    df = pd.read_csv(lines, sep=r'\s+', engine='python')
+    # detect boundaries, filter, compute per above
+    res = analyze_cycles(df, g, method)
+    st.dataframe(res)
+    st.download_button("Download", data=res.to_csv(index=False).encode(), file_name="cycle_results.csv")
+    st.line_chart(res[['Capacity_Ah', 'Specific_mAh_per_g']])
+```
+
+### 6. Module structure
+
+```
+project_root/
+├── analyzer.py        # core functions (parse_header, load_data, detect_boundaries, compute)
+├── gui.py             # Streamlit app
+├── requirements.txt   # pandas, numpy, scipy, streamlit
+└── README.md          # this instruction file
+```
+
+* **analyzer.py**:
+
+  * `parse_header(file) -> dict`
+  * `load_data(lines) -> DataFrame`
+  * `detect_boundaries(df, method) -> List[int]`
+  * `compute_capacity(df, weight) -> DataFrame`
+
+---
+
+Future enhancements:
+
+* Out-of-core support via Dask/Vaex
+* Differential capacity (dQ/dV) analysis
+* Export interactive plots or PowerPoint slides
