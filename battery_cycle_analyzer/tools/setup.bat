@@ -35,7 +35,7 @@ python -m pip install --upgrade pip
 
 REM Install dependencies
 echo 📥 Installing dependencies...
-pip install -r config\requirements.txt
+pip install -r ..\requirements.txt
 
 echo.
 echo ✅ Setup complete!

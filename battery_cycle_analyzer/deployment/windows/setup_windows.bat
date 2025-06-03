@@ -33,7 +33,7 @@ python --version
 
 echo.
 echo Installing required packages...
-pip install -r config\requirements.txt
+pip install -r ..\..\requirements.txt
 
 if errorlevel 1 (
     echo.

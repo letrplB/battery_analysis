@@ -26,7 +26,7 @@ try {
 Write-Host "📦 Installing/updating packages from requirements.txt..." -ForegroundColor Yellow
 
 try {
-    pip install -r config\requirements.txt
+    pip install -r ..\..\requirements.txt
     if ($LASTEXITCODE -ne 0) {
         throw "Package installation failed"
     }
@@ -98,7 +98,7 @@ try {
     Write-Host ""
     Write-Host "Common solutions:" -ForegroundColor Yellow
     Write-Host "• Make sure gui.py is in the src folder" -ForegroundColor Yellow
-    Write-Host "• Try: pip install -r config\requirements.txt" -ForegroundColor Yellow
+    Write-Host "• Try: pip install -r ..\..\requirements.txt" -ForegroundColor Yellow
     Write-Host "• Check that no other application is using port 8501" -ForegroundColor Yellow
     Read-Host "Press Enter to exit"
     exit 1

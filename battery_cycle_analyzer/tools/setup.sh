@@ -7,7 +7,8 @@ echo "🔋 Battery Cycle Analyzer Setup"
 echo "================================"
 
 # Change to project root (one level up from tools)
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")"
+cd ..
 
 # Check if Python 3 is available
 if ! command -v python3 &> /dev/null; then
@@ -33,7 +34,7 @@ pip install --upgrade pip
 
 # Install dependencies
 echo "📥 Installing dependencies..."
-pip install -r config/requirements.txt
+pip install -r ../requirements.txt
 
 echo ""
 echo "✅ Setup complete!"

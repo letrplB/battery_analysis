@@ -197,7 +197,7 @@ If `quick_start.bat` or `quick_start.py` don't work:
 1. **Try running as administrator** (Windows)
 2. **Check Python installation**: `python --version`
 3. **Update pip**: `python -m pip install --upgrade pip`
-4. **Manual install**: `pip install -r config/requirements.txt`
+4. **Manual install**: `pip install -r ../requirements.txt`
 5. **Use fallback scripts** in the deployment folder
 6. **Delete `venv` folder** and try again for a fresh start
 

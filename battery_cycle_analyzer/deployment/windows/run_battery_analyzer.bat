@@ -39,14 +39,14 @@ python -c "import streamlit" 2>nul
 if errorlevel 1 (
     echo [INFO] Installing required packages... This may take a few minutes.
     echo.
-    pip install -r config\requirements.txt
+    pip install -r ..\..\requirements.txt
     
     if errorlevel 1 (
         echo.
         echo [ERROR] Failed to install packages!
         echo.
         echo Please check your internet connection and try:
-        echo   pip install -r config\requirements.txt
+        echo   pip install -r ..\..\requirements.txt
         echo.
         pause
         exit /b 1

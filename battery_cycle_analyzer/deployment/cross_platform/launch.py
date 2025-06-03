@@ -42,9 +42,24 @@ def install_package(package_name, import_name=None):
             return False
 
 def install_requirements():
-    """Install all required packages."""
+    """Install all required packages from root-level requirements.txt."""
     print("🔍 Checking required packages...")
     
+    # Get the project root directory (two levels up from deployment/cross_platform/)
+    script_dir = Path(__file__).parent
+    project_root = script_dir.parent.parent.parent
+    requirements_file = project_root / "requirements.txt"
+    
+    if requirements_file.exists():
+        print(f"📦 Installing packages from requirements.txt...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", str(requirements_file)])
+            print("✅ All packages from requirements.txt installed!")
+            return True
+        except subprocess.CalledProcessError:
+            print("❌ Failed to install from requirements.txt, trying individual packages...")
+    
+    # Fallback to individual package installation
     packages = [
         ("streamlit", "streamlit"),
         ("pandas", "pandas"),
@@ -68,6 +83,7 @@ def install_requirements():
         sys.exit(1)
     
     print("✅ All packages are installed!")
+    return True
 
 def start_streamlit():
     """Start the Streamlit application."""

@@ -46,7 +46,7 @@ echo [INFO] Activating virtual environment...
 call venv\Scripts\activate.bat
 
 echo [INFO] Installing requirements...
-pip install -r config\requirements.txt --quiet --disable-pip-version-check
+pip install -r ..\requirements.txt --quiet --disable-pip-version-check
 if errorlevel 1 (
     echo [ERROR] Failed to install requirements!
     echo.
