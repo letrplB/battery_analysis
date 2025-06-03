@@ -90,7 +90,7 @@ def install_requirements():
     """Install required packages from requirements.txt."""
     print("📥 Installing/updating required packages...")
     project_root = get_project_root()
-    requirements_file = project_root / "config" / "requirements.txt"
+    requirements_file = project_root.parent / "requirements.txt"
     python_exe = get_python_executable()
     
     if not requirements_file.exists():
