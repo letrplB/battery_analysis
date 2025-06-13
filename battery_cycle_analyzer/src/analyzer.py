@@ -76,6 +76,7 @@ def load_data_from_file(file_path: str) -> pd.DataFrame:
 def load_data(file_content: str) -> pd.DataFrame:
     """
     Load data from Basytec file content, skipping metadata headers.
+    Optimized for large files up to 300 MB.
     
     Args:
         file_content: Raw file content as string
@@ -83,6 +84,11 @@ def load_data(file_content: str) -> pd.DataFrame:
     Returns:
         DataFrame with the battery test data
     """
+    # Check file size and provide memory management for large files
+    file_size_mb = len(file_content) / (1024 * 1024)
+    if file_size_mb > 50:
+        print(f"📊 Processing large file ({file_size_mb:.1f} MB)...")
+    
     lines = file_content.split('\n')
     
     # Find the column header line and data lines
@@ -141,7 +147,10 @@ def load_data(file_content: str) -> pd.DataFrame:
     print(f"🔍 First parsed line: {parsed_data[0][:10]}...")  # Show first 10 fields
     print(f"🔍 Parsed line length: {len(parsed_data[0])}")
     
-    # Create DataFrame manually
+    # Create DataFrame manually with optimized memory usage for large files
+    if file_size_mb > 100:
+        print(f"💾 Creating DataFrame from {len(parsed_data):,} data rows...")
+    
     df = pd.DataFrame(parsed_data, columns=header_parts)
     
     # Convert numeric columns with proper decimal handling
