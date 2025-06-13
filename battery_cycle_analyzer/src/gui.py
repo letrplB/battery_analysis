@@ -397,9 +397,9 @@ def main():
                         if summary.get('Total_Discharge_Cycles', 0) > 0:
                             summary_cols2 = st.columns(3)
                             with summary_cols2[0]:
-                                st.metric("Initial Discharge Capacity", f"{summary['Initial_Discharge_Capacity_Ah']:.4f} Ah")
+                                st.metric("Initial Discharge Capacity", f"{summary['Initial_Discharge_Specific_mAh_per_g']:.1f} mAh/g")
                             with summary_cols2[1]:
-                                st.metric("Final Discharge Capacity", f"{summary['Final_Discharge_Capacity_Ah']:.4f} Ah")
+                                st.metric("Final Discharge Capacity", f"{summary['Final_Discharge_Specific_mAh_per_g']:.1f} mAh/g")
                             with summary_cols2[2]:
                                 st.metric("Discharge Retention", f"{summary['Discharge_Capacity_Retention_%']:.1f}%")
                         
@@ -407,9 +407,9 @@ def main():
                         if summary.get('Total_Charge_Cycles', 0) > 0:
                             summary_cols3 = st.columns(3)
                             with summary_cols3[0]:
-                                st.metric("Initial Charge Capacity", f"{summary['Initial_Charge_Capacity_Ah']:.4f} Ah")
+                                st.metric("Initial Charge Capacity", f"{summary['Initial_Charge_Specific_mAh_per_g']:.1f} mAh/g")
                             with summary_cols3[1]:
-                                st.metric("Final Charge Capacity", f"{summary['Final_Charge_Capacity_Ah']:.4f} Ah")
+                                st.metric("Final Charge Capacity", f"{summary['Final_Charge_Specific_mAh_per_g']:.1f} mAh/g")
                             with summary_cols3[2]:
                                 st.metric("Charge Retention", f"{summary['Charge_Capacity_Retention_%']:.1f}%")
                         
