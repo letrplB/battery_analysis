@@ -131,8 +131,16 @@ def main():
         uploaded_file = st.file_uploader(
             "Upload Basytec data file",
             type=["txt", "csv"],
-            help="Select a .txt or .csv file exported from Basytec Battery Test System"
+            help="Select a .txt or .csv file exported from Basytec Battery Test System (max 300 MB)"
         )
+        
+        # Display file size warning for large files
+        if uploaded_file is not None:
+            file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
+            if file_size_mb > 100:
+                st.warning(f"⚠️ Large file detected ({file_size_mb:.1f} MB). Processing may take longer.")
+            elif file_size_mb > 200:
+                st.error(f"🚨 Very large file ({file_size_mb:.1f} MB). Consider splitting the data if processing becomes too slow.")
         
         # Test plan uploader
         test_plan_file = st.file_uploader(
