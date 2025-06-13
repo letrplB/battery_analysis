@@ -496,11 +496,19 @@ def analyze_cycles(df: pd.DataFrame, active_material_weight: float, theoretical_
         
         retention = (final_capacity / baseline_capacity * 100) if baseline_capacity > 0 else 0
         
+        # Calculate specific capacities
+        baseline_specific = baseline_capacity * 1000 / active_material_weight  # mAh/g
+        final_specific = final_capacity * 1000 / active_material_weight  # mAh/g
+        average_specific = cycles_df['Specific_mAh_per_g'].mean()
+        
         return {
             f'Initial_{cycle_type}_Capacity_Ah': baseline_capacity,
             f'Final_{cycle_type}_Capacity_Ah': final_capacity,
+            f'Initial_{cycle_type}_Specific_mAh_per_g': baseline_specific,
+            f'Final_{cycle_type}_Specific_mAh_per_g': final_specific,
             f'{cycle_type}_Capacity_Retention_%': retention,
             f'Average_{cycle_type}_Capacity_Ah': cycles_df['Capacity_Ah'].mean(),
+            f'Average_{cycle_type}_Specific_mAh_per_g': average_specific,
             f'{cycle_type}_Capacity_Std_Ah': cycles_df['Capacity_Ah'].std(),
         }
     
