@@ -5,6 +5,7 @@ import logging
 
 from core.data_loader import DataLoader
 from core.data_models import RawBatteryData
+from core.test_plan_parser import TestPlanParser, TestPlanConfig
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +95,8 @@ class DataInputComponent:
         return None
     
     @staticmethod
-    def render_test_plan_upload() -> Optional[str]:
-        """Render test plan upload UI"""
+    def render_test_plan_upload() -> Optional[TestPlanConfig]:
+        """Render test plan upload UI and parse configuration"""
         
         st.header("📋 Test Plan (Optional)")
         
@@ -107,12 +108,40 @@ class DataInputComponent:
         )
         
         if test_plan_file:
-            # Process test plan
-            content = test_plan_file.read().decode('utf-8')
-            
-            with st.expander("Test Plan Content", expanded=False):
-                st.text(content[:500] + "..." if len(content) > 500 else content)
-            
-            return content
+            try:
+                # Read and decode file content
+                content = test_plan_file.read().decode('utf-8')
+                
+                # Parse test plan
+                parser = TestPlanParser()
+                config = parser.parse(content)
+                
+                # Store in session state
+                st.session_state.test_plan_config = config
+                
+                # Display parsed configuration
+                if config.c_rate_periods:
+                    st.success(f"✅ Parsed {len(config.c_rate_periods)} C-rate periods from test plan")
+                    
+                    with st.expander("📊 Parsed C-Rate Configuration", expanded=True):
+                        for i, period in enumerate(config.c_rate_periods, 1):
+                            st.write(
+                                f"**Period {i}:** Cycles {period.start_cycle}-{period.end_cycle} | "
+                                f"Charge: {period.charge_rate:.3f}C | Discharge: {period.discharge_rate:.3f}C"
+                            )
+                        
+                        if config.total_cycles:
+                            st.write(f"**Total Cycles:** {config.total_cycles}")
+                
+                # Show raw content in expander
+                with st.expander("📄 Test Plan Content", expanded=False):
+                    st.text(content[:500] + "..." if len(content) > 500 else content)
+                
+                return config
+                
+            except Exception as e:
+                st.error(f"❌ Error parsing test plan: {str(e)}")
+                logger.exception("Test plan parsing error")
+                return None
         
         return None

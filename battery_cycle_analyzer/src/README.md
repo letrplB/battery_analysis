@@ -7,7 +7,11 @@ src/
 ├── gui_modular.py          # Main entry point - modular GUI application
 ├── core/                   # Core data processing pipeline
 │   ├── data_models.py      # Data structures and models
-│   ├── data_loader.py      # File loading and parsing
+│   ├── encoding_detector.py # File encoding detection
+│   ├── metadata_parser.py  # Metadata extraction from headers
+│   ├── raw_data_parser.py  # Raw data parsing and validation
+│   ├── test_plan_parser.py # Test plan parsing for C-rates
+│   ├── data_loader.py      # Orchestrates file loading
 │   └── preprocessor.py     # Data preprocessing and cycle detection
 ├── analysis_modes/         # Analysis implementations
 │   ├── standard_cycle.py   # Standard capacity/retention analysis

@@ -41,8 +41,8 @@ def render_sidebar():
         # Data input section
         raw_data = DataInputComponent.render()
         
-        # Test plan upload (optional)
-        test_plan = DataInputComponent.render_test_plan_upload()
+        # Test plan upload (optional) - moved before parameters so C-rates can be used
+        test_plan_config = DataInputComponent.render_test_plan_upload()
         
         # Preprocessing parameters
         parameters = None
