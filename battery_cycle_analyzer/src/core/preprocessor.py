@@ -90,39 +90,53 @@ class DataPreprocessor:
         """Detect cycle boundaries using State column"""
         boundaries = []
         
-        # Find state transitions
-        state_changes = df['State'].diff() != 0
-        change_indices = df.index[state_changes].tolist()
+        # The legacy code approach: detect charge/discharge transitions
+        # regardless of State, which is used differently
         
-        if not change_indices:
+        # Ensure we have Command column
+        if 'Command' not in df.columns:
+            self.logger.error("Command column not found for cycle detection")
             return boundaries
         
-        # Add start if not present
-        if change_indices[0] != 0:
-            change_indices.insert(0, 0)
+        # Get indices
+        indices = df.index.tolist()
         
-        # Add end if not present
-        if change_indices[-1] != len(df) - 1:
-            change_indices.append(len(df) - 1)
+        # Track current cycle
+        cycle_start = None
+        in_discharge = False
+        in_charge = False
         
-        # Group into cycles (assuming state cycles through values)
-        current_cycle_start = None
-        for i in range(len(change_indices) - 1):
-            start_idx = change_indices[i]
-            end_idx = change_indices[i + 1]
+        for i, idx in enumerate(indices):
+            command = df.loc[idx, 'Command'].lower()
             
-            # Check if this segment contains discharge
-            segment = df.iloc[start_idx:end_idx]
-            if 'Discharge' in segment['Command'].values:
-                if current_cycle_start is None:
-                    current_cycle_start = start_idx
-                
-                # Check if next segment is charge (end of cycle)
-                if i < len(change_indices) - 2:
-                    next_segment = df.iloc[change_indices[i+1]:change_indices[i+2]]
-                    if 'Charge' in next_segment['Command'].values:
-                        boundaries.append((current_cycle_start, change_indices[i+2]))
-                        current_cycle_start = None
+            if command == 'discharge':
+                if not in_discharge:
+                    # Start of discharge
+                    if cycle_start is None:
+                        cycle_start = idx
+                    in_discharge = True
+                    in_charge = False
+            
+            elif command == 'charge':
+                if not in_charge:
+                    # Start of charge
+                    if cycle_start is None:
+                        cycle_start = idx
+                    in_charge = True
+                    in_discharge = False
+            
+            # Check for cycle completion (next discharge after charge)
+            if i < len(indices) - 1:
+                next_command = df.loc[indices[i + 1], 'Command'].lower()
+                if command == 'charge' and next_command == 'discharge':
+                    # End of cycle
+                    if cycle_start is not None:
+                        boundaries.append((cycle_start, idx))
+                        cycle_start = indices[i + 1]  # Start next cycle
+        
+        # Add last cycle if exists
+        if cycle_start is not None and cycle_start < indices[-1]:
+            boundaries.append((cycle_start, indices[-1]))
         
         return boundaries
     
