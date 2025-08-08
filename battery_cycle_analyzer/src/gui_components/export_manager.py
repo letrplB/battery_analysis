@@ -24,7 +24,17 @@ class ExportManagerComponent:
             return
         
         st.markdown("---")
-        st.subheader("💾 Export Options")
+        # Header with download icon
+        st.markdown("""
+        <h3 style="display: flex; align-items: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Export Options
+        </h3>
+        """, unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns(3)
         
@@ -35,11 +45,11 @@ class ExportManagerComponent:
                 
                 filename = f"battery_{mode}_results.csv"
                 if mode == "standard":
-                    label = "📥 Download Cycle Analysis"
+                    label = "Download Cycle Analysis"
                 elif mode == "dqdu":
-                    label = "📥 Download dQ/dU Results"
+                    label = "Download dQ/dU Results"
                 else:
-                    label = "📥 Download Results"
+                    label = "Download Results"
                 
                 st.download_button(
                     label=label,
@@ -56,7 +66,7 @@ class ExportManagerComponent:
                 if preprocessed_data and preprocessed_data.raw_data:
                     raw_csv = preprocessed_data.raw_data.data.to_csv(index=False)
                     st.download_button(
-                        label="📥 Download Raw Data",
+                        label="Download Raw Data",
                         data=raw_csv,
                         file_name="battery_raw_data.csv",
                         mime="text/csv",
@@ -71,7 +81,7 @@ class ExportManagerComponent:
                     results, preprocessed_data, mode
                 )
                 st.download_button(
-                    label="📥 Download Report",
+                    label="Download Report",
                     data=report,
                     file_name=f"battery_{mode}_report.txt",
                     mime="text/plain",
@@ -80,7 +90,7 @@ class ExportManagerComponent:
                 )
         
         # Advanced export options
-        with st.expander("🔧 Advanced Export Options", expanded=False):
+        with st.expander("Advanced Export Options", expanded=False):
             st.write("**Export Format:**")
             export_format = st.selectbox(
                 "Select format",
@@ -94,7 +104,7 @@ class ExportManagerComponent:
                         results, preprocessed_data, mode
                     )
                     st.download_button(
-                        label="📥 Download Excel File",
+                        label="Download Excel File",
                         data=excel_buffer,
                         file_name=f"battery_{mode}_results.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -105,7 +115,7 @@ class ExportManagerComponent:
                 if results.export_data is not None:
                     json_data = results.export_data.to_json(orient='records', indent=2)
                     st.download_button(
-                        label="📥 Download JSON File",
+                        label="Download JSON File",
                         data=json_data,
                         file_name=f"battery_{mode}_results.json",
                         mime="application/json",

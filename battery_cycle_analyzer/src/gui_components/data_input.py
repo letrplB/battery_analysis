@@ -18,7 +18,19 @@ class DataInputComponent:
     def render() -> Optional[RawBatteryData]:
         """Render data input UI and return loaded data if available"""
         
-        st.header("📁 Data Input")
+        # Header with file icon
+        st.markdown("""
+        <h2 style="display: flex; align-items: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            Data Input
+        </h2>
+        """, unsafe_allow_html=True)
         
         # Device type selection
         device_type = st.selectbox(
@@ -66,15 +78,15 @@ class DataInputComponent:
                     try:
                         loader = DataLoader(device_type=device_type)
                         st.session_state.raw_data = loader.load_file(tmp_path)
-                        st.success(f"✅ File loaded: {uploaded_file.name}")
+                        st.success(f"File loaded: {uploaded_file.name}")
                         
                         # Show device-specific info
                         if device_type == DeviceType.BASYTEC:
-                            st.info("🔧 Using Basytec profile: European decimal format (comma separator)")
+                            st.info("Using Basytec profile: European decimal format (comma separator)")
                         elif device_type == DeviceType.ARBIN:
-                            st.info("🔧 Using Arbin profile: Time in seconds will be converted to hours")
+                            st.info("Using Arbin profile: Time in seconds will be converted to hours")
                         elif device_type == DeviceType.NEWARE:
-                            st.info("🔧 Using Neware profile")
+                            st.info("Using Neware profile")
                             
                     except Exception as e:
                         st.error(f"Error loading file: {str(e)}")
@@ -93,7 +105,7 @@ class DataInputComponent:
                     st.metric("Data Rows", f"{len(raw_data.data):,}")
                 
                 # Show metadata in expander
-                with st.expander("📋 File Metadata", expanded=False):
+                with st.expander("File Metadata", expanded=False):
                     metadata = raw_data.metadata
                     if metadata.test_name:
                         st.write(f"**Test Name:** {metadata.test_name}")
@@ -109,7 +121,7 @@ class DataInputComponent:
                         st.write(f"**Operator:** {metadata.operator_test}")
                 
                 # Show data preview
-                with st.expander("👀 Data Preview", expanded=False):
+                with st.expander("Data Preview", expanded=False):
                     st.dataframe(
                         raw_data.data.head(10),
                         use_container_width=True,
@@ -124,7 +136,7 @@ class DataInputComponent:
     def render_test_plan_upload() -> Optional[TestPlanConfig]:
         """Render test plan upload UI and parse configuration"""
         
-        st.header("📋 Test Plan (Optional)")
+        st.header("Test Plan (Optional)")
         
         test_plan_file = st.file_uploader(
             "Upload test plan file",
@@ -160,9 +172,9 @@ class DataInputComponent:
                 
                 # Display parsed configuration
                 if config.c_rate_periods:
-                    st.success(f"✅ Parsed {len(config.c_rate_periods)} C-rate periods from test plan")
+                    st.success(f"Parsed {len(config.c_rate_periods)} C-rate periods from test plan")
                     
-                    with st.expander("📊 Parsed C-Rate Configuration", expanded=True):
+                    with st.expander("Parsed C-Rate Configuration", expanded=True):
                         for i, period in enumerate(config.c_rate_periods, 1):
                             st.write(
                                 f"**Period {i}:** Cycles {period.start_cycle}-{period.end_cycle} | "
@@ -173,13 +185,13 @@ class DataInputComponent:
                             st.write(f"**Total Cycles:** {config.total_cycles}")
                 
                 # Show raw content in expander
-                with st.expander("📄 Test Plan Content", expanded=False):
+                with st.expander("Test Plan Content", expanded=False):
                     st.text(content[:500] + "..." if len(content) > 500 else content)
                 
                 return config
                 
             except Exception as e:
-                st.error(f"❌ Error parsing test plan: {str(e)}")
+                st.error(f"Error parsing test plan: {str(e)}")
                 logger.exception("Test plan parsing error")
                 return None
         
