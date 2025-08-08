@@ -29,7 +29,7 @@ class ResultsViewerComponent:
             ResultsViewerComponent._render_combined_results(results)
     
     @staticmethod
-    def _render_standard_results(results: AnalysisResults) -> None:
+    def _render_standard_results(results: AnalysisResults, key_suffix: str = "") -> None:
         """Display standard cycle analysis results"""
         
         # Summary metrics
@@ -104,7 +104,7 @@ class ResultsViewerComponent:
             for tab, (plot_name, fig) in zip(tabs, results.plots.items()):
                 with tab:
                     if fig:
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key=f"{plot_name}{key_suffix}")
         
         # Cycle data table
         if st.session_state.get('show_cycle_table', True):
@@ -161,16 +161,11 @@ class ResultsViewerComponent:
                 )
     
     @staticmethod
-    def _render_dqdu_results(results: AnalysisResults) -> None:
+    def _render_dqdu_results(results: AnalysisResults, key_suffix: str = "") -> None:
         """Display dQ/dU analysis results"""
         
-        # Main plot
-        if results.plots and 'dqdu_plot' in results.plots:
-            st.subheader("📈 dQ/dU Plot")
-            st.plotly_chart(
-                results.plots['dqdu_plot'],
-                use_container_width=True
-            )
+        # The dQ/dU plot is already displayed in the standard plots section
+        # We only show the peak data and raw data here
         
         # Peak detection results
         if results.peak_data is not None and not results.peak_data.empty:
@@ -209,5 +204,48 @@ class ResultsViewerComponent:
     def _render_combined_results(results: AnalysisResults) -> None:
         """Display combined analysis results"""
         
-        st.info("Combined results display will be implemented")
-        # TODO: Implement combined results display
+        # Create tabs for different result types
+        tabs = st.tabs(["📊 All Plots", "📈 dQ/dU Data", "📋 Export Tables"])
+        
+        with tabs[0]:
+            # Display all plots including standard and dQ/dU
+            ResultsViewerComponent._render_standard_results(results, key_suffix="_combined")
+        
+        with tabs[1]:
+            # Display dQ/dU peak data and raw data
+            ResultsViewerComponent._render_dqdu_results(results, key_suffix="_combined")
+        
+        with tabs[2]:
+            # Display combined data tables
+            st.subheader("📋 Combined Data Export")
+            
+            if results.export_data is not None:
+                # Show cycle data
+                st.write("**Cycle Analysis Data:**")
+                st.dataframe(
+                    results.export_data.round(2),
+                    use_container_width=True,
+                    height=400
+                )
+                
+                # Export options
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    csv_cycle = results.export_data.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Cycle Data (CSV)",
+                        data=csv_cycle,
+                        file_name="combined_cycle_analysis.csv",
+                        mime="text/csv"
+                    )
+                
+                with col2:
+                    if results.dqdu_data is not None:
+                        csv_dqdu = results.dqdu_data.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download dQ/dU Data (CSV)",
+                            data=csv_dqdu,
+                            file_name="combined_dqdu_analysis.csv",
+                            mime="text/csv"
+                        )
