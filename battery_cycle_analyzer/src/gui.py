@@ -12,8 +12,10 @@ from plotly.subplots import make_subplots
 import io
 import traceback
 from analyzer import parse_header, load_data, analyze_cycles, export_results
+from dqdu_analyzer import compute_dqdu_analysis, get_available_cycles_for_dqdu
+import dqdu_analyzer
 import re
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 
 def decode_uploaded_file(uploaded_file):
@@ -300,6 +302,15 @@ def main():
             help="Cycle number to use as baseline for retention calculation. Use 0 for auto-selection of the best realistic cycle (recommended)."
         )
         
+        # Analysis mode selector
+        st.header("🎯 Analysis Mode")
+        analysis_mode = st.selectbox(
+            "Select analysis mode",
+            ["Standard Cycle Analysis", "dQ/dU Analysis", "Combined Analysis"],
+            index=0,
+            help="Choose the type of analysis to perform on your data"
+        )
+        
         # Analysis button
         analyze_button = st.button(
             "🔍 Analyze Data",
@@ -343,7 +354,7 @@ def main():
             
             # Perform analysis when button is clicked
             if analyze_button:
-                with st.spinner("Analyzing battery cycle data..."):
+                with st.spinner("Loading and processing battery data..."):
                     try:
                         # Load data
                         df = load_data(file_content)
@@ -353,12 +364,17 @@ def main():
                         st.text(f"Data shape: {df.shape[0]} rows × {df.shape[1]} columns")
                         st.dataframe(df.head(10), use_container_width=True)
                         
-                        # Perform cycle analysis
-                        # Generate analysis name from uploaded file
-                        analysis_name = uploaded_file.name.split('.')[0] if uploaded_file.name else "unknown_file"
-                        results_df, summary = analyze_cycles(df, active_material_weight, theoretical_capacity, boundary_method, st.session_state.crate_configs, baseline_cycle, analysis_name)
+                        # Perform standard cycle analysis if needed
+                        results_df = None
+                        summary = {}
+                        dqdu_results = None
                         
-                        if results_df.empty:
+                        if analysis_mode in ["Standard Cycle Analysis", "Combined Analysis"]:
+                            # Generate analysis name from uploaded file
+                            analysis_name = uploaded_file.name.split('.')[0] if uploaded_file.name else "unknown_file"
+                            results_df, summary = analyze_cycles(df, active_material_weight, theoretical_capacity, boundary_method, st.session_state.crate_configs, baseline_cycle, analysis_name)
+                        
+                        if results_df is not None and results_df.empty:
                             st.error("No cycles found in the data. Please check your file and boundary detection method.")
                             return
                         
@@ -366,72 +382,345 @@ def main():
                         if summary.get('Log_File'):
                             st.info(f"📝 Warnings and detailed logs saved to: `{summary['Log_File']}`")
                         
-                        # Display summary statistics
-                        st.subheader("📈 Analysis Summary")
-                        
-                        summary_cols = st.columns(4)
-                        with summary_cols[0]:
-                            st.metric("Total Half-Cycles", summary['Total_Half_Cycles'])
-                        with summary_cols[1]:
-                            st.metric("Charge Cycles", summary['Total_Charge_Cycles'])
-                        with summary_cols[2]:
-                            st.metric("Discharge Cycles", summary['Total_Discharge_Cycles'])
-                        with summary_cols[3]:
-                            st.metric("Test Duration", f"{summary['Total_Test_Duration_h']:.1f} h")
-                        
-                        # C-rate periods information
-                        st.subheader("🔋 C-Rate Periods")
-                        crate_cols = st.columns(min(len(st.session_state.crate_configs), 4))
-                        for i, config in enumerate(st.session_state.crate_configs[:4]):  # Show max 4 periods
-                            with crate_cols[i]:
-                                st.metric(
-                                    f"Period {i+1}",
-                                    f"Cycles {config['start_cycle']}-{config['end_cycle']}",
-                                    f"C: {config['charge_crate']:.3f} | D: {config['discharge_crate']:.3f}"
-                                )
-                        
-                        if len(st.session_state.crate_configs) > 4:
-                            st.info(f"... and {len(st.session_state.crate_configs) - 4} more periods")
-                        
-                        # Additional summary metrics for discharge cycles
-                        if summary.get('Total_Discharge_Cycles', 0) > 0:
-                            summary_cols2 = st.columns(3)
-                            with summary_cols2[0]:
-                                st.metric("Initial Discharge Specific Capacity", f"{summary['Initial_Discharge_Specific_mAh_per_g']:.1f} mAh/g")
-                            with summary_cols2[1]:
-                                st.metric("Final Discharge Specific Capacity", f"{summary['Final_Discharge_Specific_mAh_per_g']:.1f} mAh/g")
-                            with summary_cols2[2]:
-                                st.metric("Discharge Retention", f"{summary['Discharge_Capacity_Retention_%']:.1f}%")
-                        
-                        # Additional summary metrics for charge cycles
-                        if summary.get('Total_Charge_Cycles', 0) > 0:
-                            summary_cols3 = st.columns(3)
-                            with summary_cols3[0]:
-                                st.metric("Initial Charge Specific Capacity", f"{summary['Initial_Charge_Specific_mAh_per_g']:.1f} mAh/g")
-                            with summary_cols3[1]:
-                                st.metric("Final Charge Specific Capacity", f"{summary['Final_Charge_Specific_mAh_per_g']:.1f} mAh/g")
-                            with summary_cols3[2]:
-                                st.metric("Charge Retention", f"{summary['Charge_Capacity_Retention_%']:.1f}%")
-                        
-                        # Display results table
-                        st.subheader("📋 Cycle Results")
-                        st.dataframe(results_df, use_container_width=True)
-                        
-                        # Create visualizations
-                        st.subheader("📊 Visualizations")
-                        
-                        # Create tabs for different plots
-                        tab1, tab2, tab3, tab4 = st.tabs(["Capacity vs Cycle", "Specific Capacity", "Voltage Analysis", "Cycle Duration"])
-                        
-                        with tab1:
-                            # Separate charge and discharge for plotting
-                            charge_data = results_df[results_df['HalfCycleType'] == 'charge']
-                            discharge_data = results_df[results_df['HalfCycleType'] == 'discharge']
+                        # dQ/dU Analysis Configuration and Execution
+                        if analysis_mode in ["dQ/dU Analysis", "Combined Analysis"]:
+                            st.subheader("🔬 dQ/dU Analysis Configuration")
                             
-                            fig1 = go.Figure()
+                            with st.expander("Configure dQ/dU Analysis Parameters", expanded=True):
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    # Cycle selection
+                                    if results_df is not None:
+                                        available_cycles = get_available_cycles_for_dqdu(results_df)
+                                    else:
+                                        # For dQ/dU only mode, extract cycles from raw data
+                                        from analyzer import compute_capacity
+                                        temp_results = compute_capacity(df, active_material_weight, theoretical_capacity, boundary_method, st.session_state.crate_configs)
+                                        available_cycles = get_available_cycles_for_dqdu(temp_results)
+                                        if results_df is None:
+                                            results_df = temp_results
+                                    
+                                    # Format cycle options for display
+                                    cycle_options = [f"Cycle {cycle} ({hc_type})" for cycle, hc_type in available_cycles]
+                                    default_selection = cycle_options[:min(3, len(cycle_options))] if cycle_options else []
+                                    
+                                    selected_cycle_strs = st.multiselect(
+                                        "Select cycles for dQ/dU analysis",
+                                        cycle_options,
+                                        default=default_selection,
+                                        help="Choose which cycles to analyze for dQ/dU plots"
+                                    )
+                                    
+                                    # Parse selected cycles back to tuples
+                                    selected_cycles = []
+                                    for cycle_str in selected_cycle_strs:
+                                        # Parse "Cycle X (type)" format
+                                        import re
+                                        match = re.match(r"Cycle (\d+) \((\w+)\)", cycle_str)
+                                        if match:
+                                            selected_cycles.append((int(match.group(1)), match.group(2)))
+                                    
+                                    # Voltage range filter
+                                    use_voltage_filter = st.checkbox("Apply voltage range filter", value=False)
+                                    voltage_range = None
+                                    if use_voltage_filter:
+                                        v_min = st.number_input("Min voltage (V)", min_value=0.0, max_value=5.0, value=1.5, step=0.1)
+                                        v_max = st.number_input("Max voltage (V)", min_value=0.0, max_value=5.0, value=3.9, step=0.1)
+                                        voltage_range = (v_min, v_max)
+                                
+                                with col2:
+                                    # Advanced parameters
+                                    n_points = st.slider(
+                                        "Interpolation points",
+                                        min_value=100,
+                                        max_value=1000,
+                                        value=333,
+                                        step=10,
+                                        help="Number of points for interpolation (higher = smoother)"
+                                    )
+                                    
+                                    # Smoothing options
+                                    smoothing_method = st.selectbox(
+                                        "Smoothing method",
+                                        ["None", "Savitzky-Golay", "Moving Average", "Gaussian"],
+                                        help="Apply smoothing to reduce noise in dQ/dU curves"
+                                    )
+                                    
+                                    smoothing_params = None
+                                    if smoothing_method == "Savitzky-Golay":
+                                        window_length = st.slider("Window length", 5, 51, 11, step=2)
+                                        poly_order = st.slider("Polynomial order", 1, 5, 3)
+                                        smoothing_params = {"method": "savgol", "window": window_length, "poly": poly_order}
+                                    elif smoothing_method == "Moving Average":
+                                        window_size = st.slider("Window size", 3, 21, 5, step=2)
+                                        smoothing_params = {"method": "moving_avg", "window": window_size}
+                                    elif smoothing_method == "Gaussian":
+                                        sigma = st.slider("Sigma", 0.5, 5.0, 1.0, step=0.5)
+                                        smoothing_params = {"method": "gaussian", "sigma": sigma}
+                                    
+                                    # Peak detection
+                                    detect_peaks = st.checkbox("Enable peak detection", value=True)
+                                    peak_prominence = 0.1
+                                    if detect_peaks:
+                                        peak_prominence = st.slider(
+                                            "Peak prominence",
+                                            min_value=0.01,
+                                            max_value=1.0,
+                                            value=0.1,
+                                            step=0.01,
+                                            help="Minimum prominence for peak detection"
+                                        )
                             
-                            if len(discharge_data) > 0:
-                                fig1.add_trace(go.Scatter(
+                            # Perform dQ/dU analysis
+                            if selected_cycles:
+                                with st.spinner("Performing dQ/dU analysis..."):
+                                    params = {
+                                        'n_points': n_points,
+                                        'voltage_range': voltage_range,
+                                        'smoothing': smoothing_params,
+                                        'peak_detection': detect_peaks,
+                                        'peak_prominence': peak_prominence
+                                    }
+                                    
+                                    dqdu_results = compute_dqdu_analysis(df, selected_cycles, params)
+                        
+                        # Display summary statistics for standard analysis
+                        if analysis_mode in ["Standard Cycle Analysis", "Combined Analysis"] and results_df is not None and not results_df.empty:
+                            st.subheader("📈 Analysis Summary")
+                            
+                            summary_cols = st.columns(4)
+                            with summary_cols[0]:
+                                st.metric("Total Half-Cycles", summary['Total_Half_Cycles'])
+                            with summary_cols[1]:
+                                st.metric("Charge Cycles", summary['Total_Charge_Cycles'])
+                            with summary_cols[2]:
+                                st.metric("Discharge Cycles", summary['Total_Discharge_Cycles'])
+                            with summary_cols[3]:
+                                st.metric("Test Duration", f"{summary['Total_Test_Duration_h']:.1f} h")
+                        
+                            # C-rate periods information
+                            st.subheader("🔋 C-Rate Periods")
+                            crate_cols = st.columns(min(len(st.session_state.crate_configs), 4))
+                            for i, config in enumerate(st.session_state.crate_configs[:4]):  # Show max 4 periods
+                                with crate_cols[i]:
+                                    st.metric(
+                                        f"Period {i+1}",
+                                        f"Cycles {config['start_cycle']}-{config['end_cycle']}",
+                                        f"C: {config['charge_crate']:.3f} | D: {config['discharge_crate']:.3f}"
+                                    )
+                            
+                            if len(st.session_state.crate_configs) > 4:
+                                st.info(f"... and {len(st.session_state.crate_configs) - 4} more periods")
+                        
+                            # Additional summary metrics for discharge cycles
+                            if summary.get('Total_Discharge_Cycles', 0) > 0:
+                                summary_cols2 = st.columns(3)
+                                with summary_cols2[0]:
+                                    st.metric("Initial Discharge Specific Capacity", f"{summary['Initial_Discharge_Specific_mAh_per_g']:.1f} mAh/g")
+                                with summary_cols2[1]:
+                                    st.metric("Final Discharge Specific Capacity", f"{summary['Final_Discharge_Specific_mAh_per_g']:.1f} mAh/g")
+                                with summary_cols2[2]:
+                                    st.metric("Discharge Retention", f"{summary['Discharge_Capacity_Retention_%']:.1f}%")
+                        
+                            # Additional summary metrics for charge cycles
+                            if summary.get('Total_Charge_Cycles', 0) > 0:
+                                summary_cols3 = st.columns(3)
+                                with summary_cols3[0]:
+                                    st.metric("Initial Charge Specific Capacity", f"{summary['Initial_Charge_Specific_mAh_per_g']:.1f} mAh/g")
+                                with summary_cols3[1]:
+                                    st.metric("Final Charge Specific Capacity", f"{summary['Final_Charge_Specific_mAh_per_g']:.1f} mAh/g")
+                                with summary_cols3[2]:
+                                    st.metric("Charge Retention", f"{summary['Charge_Capacity_Retention_%']:.1f}%")
+                        
+                            # Display results table
+                            st.subheader("📋 Cycle Results")
+                            st.dataframe(results_df, use_container_width=True)
+                        
+                        # dQ/dU Analysis Section
+                        if analysis_mode in ["dQ/dU Analysis", "Combined Analysis"]:
+                            st.subheader("🔬 dQ/dU Analysis")
+                            
+                            # Get available cycles
+                            available_cycles = dqdu_analyzer.get_available_cycles(df)
+                            
+                            if len(available_cycles) == 0:
+                                st.error("No cycles available for dQ/dU analysis")
+                            else:
+                                # dQ/dU Configuration
+                                with st.expander("⚙️ dQ/dU Configuration", expanded=True):
+                                    col1, col2 = st.columns(2)
+                                    
+                                    with col1:
+                                        # Cycle selection
+                                        st.markdown("**Cycle Selection**")
+                                        
+                                        # Format cycle options for display
+                                        cycle_options = [f"Cycle {num} - {type_}" for num, type_ in available_cycles]
+                                        selected_cycle_indices = st.multiselect(
+                                            "Select cycles for dQ/dU analysis",
+                                            range(len(cycle_options)),
+                                            default=list(range(min(3, len(cycle_options)))),
+                                            format_func=lambda x: cycle_options[x]
+                                        )
+                                        
+                                        selected_cycles = [available_cycles[i] for i in selected_cycle_indices]
+                                        
+                                        # Voltage range filter
+                                        st.markdown("**Voltage Range**")
+                                        use_voltage_filter = st.checkbox("Apply voltage range filter", value=False)
+                                        if use_voltage_filter:
+                                            voltage_min = st.number_input("Min voltage (V)", value=1.5, step=0.1)
+                                            voltage_max = st.number_input("Max voltage (V)", value=3.9, step=0.1)
+                                            voltage_range = (voltage_min, voltage_max)
+                                        else:
+                                            voltage_range = None
+                                    
+                                    with col2:
+                                        # Advanced parameters
+                                        st.markdown("**Analysis Parameters**")
+                                        n_points = st.slider(
+                                            "Interpolation points",
+                                            min_value=100,
+                                            max_value=1000,
+                                            value=333,
+                                            step=10,
+                                            help="Number of points for interpolation (higher = smoother)"
+                                        )
+                                        
+                                        # Smoothing options
+                                        smoothing_method = st.selectbox(
+                                            "Smoothing method",
+                                            ["None", "Savitzky-Golay", "Moving Average"],
+                                            help="Apply smoothing to reduce noise in dQ/dU curves"
+                                        )
+                                        
+                                        smoothing_params = None
+                                        if smoothing_method == "Savitzky-Golay":
+                                            window_length = st.slider("Window length", 5, 51, 11, step=2)
+                                            poly_order = st.slider("Polynomial order", 1, 5, 3)
+                                            smoothing_params = {"method": "savgol", "window": window_length, "poly": poly_order}
+                                        elif smoothing_method == "Moving Average":
+                                            window_size = st.slider("Window size", 3, 21, 5, step=2)
+                                            smoothing_params = {"method": "moving_avg", "window": window_size}
+                                        
+                                        # Peak detection
+                                        detect_peaks = st.checkbox("Enable peak detection", value=True)
+                                        peak_prominence = 0.1
+                                        if detect_peaks:
+                                            peak_prominence = st.slider(
+                                                "Peak prominence",
+                                                min_value=0.01,
+                                                max_value=1.0,
+                                                value=0.1,
+                                                step=0.01,
+                                                help="Minimum prominence for peak detection"
+                                            )
+                                
+                                # Perform dQ/dU analysis
+                                if st.button("🔬 Run dQ/dU Analysis", type="secondary"):
+                                    with st.spinner("Computing dQ/dU analysis..."):
+                                        # Prepare parameters
+                                        params = {
+                                            'n_points': n_points,
+                                            'voltage_range': voltage_range,
+                                            'smoothing': smoothing_params,
+                                            'peak_detection': detect_peaks,
+                                            'peak_prominence': peak_prominence
+                                        }
+                                        
+                                        # Run analysis
+                                        dqdu_results = dqdu_analyzer.compute_dqdu_analysis(df, selected_cycles, params)
+                                        
+                                        # Display results
+                                        if dqdu_results:
+                                            st.success(f"✅ dQ/dU analysis completed for {len(dqdu_results)} cycles")
+                                            
+                                            # Create dQ/dU plot
+                                            st.subheader("📈 dQ/dU Plot")
+                                            
+                                            fig_dqdu = go.Figure()
+                                            
+                                            # Add traces for each selected cycle
+                                            for key, result in dqdu_results.items():
+                                                if 'error' not in result:
+                                                    cycle_info = result['metadata']
+                                                    label = f"Cycle {cycle_info['cycle_number']} ({cycle_info['half_cycle_type']})"
+                                                    
+                                                    fig_dqdu.add_trace(go.Scatter(
+                                                        x=result['voltage'],
+                                                        y=result['dq_du'],
+                                                        mode='lines',
+                                                        name=label,
+                                                        hovertemplate='Voltage: %{x:.3f} V<br>dQ/dU: %{y:.3f} mAh/V<extra></extra>'
+                                                    ))
+                                                    
+                                                    # Add peak markers if available
+                                                    if result.get('peaks') and detect_peaks:
+                                                        peaks = result['peaks']
+                                                        if len(peaks['peak_voltages']) > 0:
+                                                            fig_dqdu.add_trace(go.Scatter(
+                                                                x=peaks['peak_voltages'],
+                                                                y=peaks['peak_values'],
+                                                                mode='markers',
+                                                                marker=dict(size=10, symbol='triangle-up', color='red'),
+                                                                name=f"{label} - Peaks",
+                                                                showlegend=False,
+                                                                hovertemplate='Peak<br>V: %{x:.3f} V<br>dQ/dU: %{y:.3f}<extra></extra>'
+                                                            ))
+                                            
+                                            fig_dqdu.update_layout(
+                                                title='Differential Capacity (dQ/dU) Analysis',
+                                                xaxis_title='Voltage (V)',
+                                                yaxis_title='dQ/dU (mAh/V)',
+                                                height=600,
+                                                hovermode='x unified'
+                                            )
+                                            
+                                            st.plotly_chart(fig_dqdu, use_container_width=True)
+                                            
+                                            # Display peak information if available
+                                            if detect_peaks:
+                                                st.subheader("🎯 Peak Analysis")
+                                                peak_data = []
+                                                for key, result in dqdu_results.items():
+                                                    if 'error' not in result and result.get('peaks'):
+                                                        cycle_info = result['metadata']
+                                                        peaks = result['peaks']
+                                                        for i, v in enumerate(peaks['peak_voltages']):
+                                                            peak_data.append({
+                                                                'Cycle': cycle_info['cycle_number'],
+                                                                'Type': cycle_info['half_cycle_type'],
+                                                                'Peak Voltage (V)': f"{v:.3f}",
+                                                                'dQ/dU Value': f"{peaks['peak_values'][i]:.3f}",
+                                                                'Prominence': f"{peaks['peak_prominences'][i]:.3f}"
+                                                            })
+                                                
+                                                if peak_data:
+                                                    peak_df = pd.DataFrame(peak_data)
+                                                    st.dataframe(peak_df, use_container_width=True)
+                                                else:
+                                                    st.info("No peaks detected with current settings")
+                                            
+                                            # Store results in session state for export
+                                            st.session_state['dqdu_results'] = dqdu_results
+                        
+                        # Create standard visualizations
+                        if analysis_mode in ["Standard Cycle Analysis", "Combined Analysis"] and results_df is not None:
+                            st.subheader("📊 Standard Analysis Visualizations")
+                            
+                            # Create tabs for different plots
+                            tab1, tab2, tab3, tab4 = st.tabs(["Capacity vs Cycle", "Specific Capacity", "Voltage Analysis", "Cycle Duration"])
+                            
+                            with tab1:
+                                # Separate charge and discharge for plotting
+                                charge_data = results_df[results_df['HalfCycleType'] == 'charge']
+                                discharge_data = results_df[results_df['HalfCycleType'] == 'discharge']
+                                
+                                fig1 = go.Figure()
+                                
+                                if len(discharge_data) > 0:
+                                    fig1.add_trace(go.Scatter(
                                     x=discharge_data['Cycle'], 
                                     y=discharge_data['Capacity_Ah'],
                                     mode='lines+markers',
@@ -440,9 +729,9 @@ def main():
                                     text=discharge_data['Cycle'],
                                     hovertemplate='Cycle: %{text}<br>Capacity: %{y:.4f} Ah<extra></extra>'
                                 ))
-                            
-                            if len(charge_data) > 0:
-                                fig1.add_trace(go.Scatter(
+                                
+                                if len(charge_data) > 0:
+                                    fig1.add_trace(go.Scatter(
                                     x=charge_data['Cycle'], 
                                     y=charge_data['Capacity_Ah'],
                                     mode='lines+markers',
@@ -451,20 +740,20 @@ def main():
                                     text=charge_data['Cycle'],
                                     hovertemplate='Cycle: %{text}<br>Capacity: %{y:.4f} Ah<extra></extra>'
                                 ))
-                            
-                            fig1.update_layout(
+                                
+                                fig1.update_layout(
                                 title='Capacity vs Cycle Number',
                                 xaxis_title='Cycle Number',
                                 yaxis_title='Capacity (Ah)',
                                 height=500
                             )
-                            st.plotly_chart(fig1, use_container_width=True)
-                        
-                        with tab2:
-                            fig2 = go.Figure()
+                                st.plotly_chart(fig1, use_container_width=True)
                             
-                            if len(discharge_data) > 0:
-                                fig2.add_trace(go.Scatter(
+                            with tab2:
+                                fig2 = go.Figure()
+                                
+                                if len(discharge_data) > 0:
+                                    fig2.add_trace(go.Scatter(
                                     x=discharge_data['Cycle'], 
                                     y=discharge_data['Specific_mAh_per_g'],
                                     mode='lines+markers',
@@ -473,9 +762,9 @@ def main():
                                     text=discharge_data['Cycle'],
                                     hovertemplate='Cycle: %{text}<br>Specific Capacity: %{y:.1f} mAh/g<extra></extra>'
                                 ))
-                            
-                            if len(charge_data) > 0:
-                                fig2.add_trace(go.Scatter(
+                                
+                                if len(charge_data) > 0:
+                                    fig2.add_trace(go.Scatter(
                                     x=charge_data['Cycle'], 
                                     y=charge_data['Specific_mAh_per_g'],
                                     mode='lines+markers',
@@ -484,20 +773,20 @@ def main():
                                     text=charge_data['Cycle'],
                                     hovertemplate='Cycle: %{text}<br>Specific Capacity: %{y:.1f} mAh/g<extra></extra>'
                                 ))
-                            
-                            fig2.update_layout(
+                                
+                                fig2.update_layout(
                                 title='Specific Capacity vs Cycle Number',
                                 xaxis_title='Cycle Number',
                                 yaxis_title='Specific Capacity (mAh/g)',
                                 height=500
                             )
-                            st.plotly_chart(fig2, use_container_width=True)
-                        
-                        with tab3:
-                            fig4 = make_subplots(specs=[[{"secondary_y": False}]])
+                                st.plotly_chart(fig2, use_container_width=True)
                             
-                            if len(discharge_data) > 0:
-                                fig4.add_trace(go.Scatter(
+                            with tab3:
+                                fig4 = make_subplots(specs=[[{"secondary_y": False}]])
+                                
+                                if len(discharge_data) > 0:
+                                    fig4.add_trace(go.Scatter(
                                     x=discharge_data['Cycle'], 
                                     y=discharge_data['Voltage_Max_V'], 
                                     mode='lines+markers', 
@@ -518,9 +807,9 @@ def main():
                                     name='Discharge Avg V', 
                                     line=dict(color='blue')
                                 ))
-                            
-                            if len(charge_data) > 0:
-                                fig4.add_trace(go.Scatter(
+                                
+                                if len(charge_data) > 0:
+                                    fig4.add_trace(go.Scatter(
                                     x=charge_data['Cycle'], 
                                     y=charge_data['Voltage_Max_V'], 
                                     mode='lines+markers', 
@@ -541,20 +830,20 @@ def main():
                                     name='Charge Avg V', 
                                     line=dict(color='red')
                                 ))
-                            
-                            fig4.update_layout(
+                                
+                                fig4.update_layout(
                                 title='Voltage Analysis vs Cycle Number',
                                 xaxis_title='Cycle Number',
                                 yaxis_title='Voltage (V)',
                                 height=500
                             )
-                            st.plotly_chart(fig4, use_container_width=True)
-                        
-                        with tab4:
-                            fig5 = go.Figure()
+                                st.plotly_chart(fig4, use_container_width=True)
                             
-                            if len(discharge_data) > 0:
-                                fig5.add_trace(go.Scatter(
+                            with tab4:
+                                fig5 = go.Figure()
+                                
+                                if len(discharge_data) > 0:
+                                    fig5.add_trace(go.Scatter(
                                     x=discharge_data['Cycle'], 
                                     y=discharge_data['Duration_h'],
                                     mode='lines+markers',
@@ -563,9 +852,9 @@ def main():
                                     text=discharge_data['Cycle'],
                                     hovertemplate='Cycle: %{text}<br>Duration: %{y:.2f} h<extra></extra>'
                                 ))
-                            
-                            if len(charge_data) > 0:
-                                fig5.add_trace(go.Scatter(
+                                
+                                if len(charge_data) > 0:
+                                    fig5.add_trace(go.Scatter(
                                     x=charge_data['Cycle'], 
                                     y=charge_data['Duration_h'],
                                     mode='lines+markers',
@@ -574,14 +863,14 @@ def main():
                                     text=charge_data['Cycle'],
                                     hovertemplate='Cycle: %{text}<br>Duration: %{y:.2f} h<extra></extra>'
                                 ))
-                            
-                            fig5.update_layout(
+                                
+                                fig5.update_layout(
                                 title='Cycle Duration vs Cycle Number',
                                 xaxis_title='Cycle Number',
                                 yaxis_title='Duration (h)',
                                 height=500
                             )
-                            st.plotly_chart(fig5, use_container_width=True)
+                                st.plotly_chart(fig5, use_container_width=True)
                         
                         # Download section
                         st.subheader("💾 Download Results")
