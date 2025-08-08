@@ -141,6 +141,9 @@ def install_dependencies():
 
 def run_application():
     """Run the Streamlit application"""
+    # Store the root venv python path before changing directories
+    venv_python = get_venv_python()
+    
     # Navigate to battery_cycle_analyzer
     app_dir = Path.cwd() / "battery_cycle_analyzer"
     if not app_dir.exists():
@@ -165,10 +168,8 @@ def run_application():
     print("=" * 50)
     print()
     
-    venv_python = get_venv_python()
-    
     try:
-        # Run Streamlit
+        # Run Streamlit using the venv python from root
         subprocess.run([str(venv_python), "-m", "streamlit", "run", "src/gui_modular.py"])
     except KeyboardInterrupt:
         print()
