@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from scipy import integrate
 import logging
 
@@ -30,7 +30,8 @@ class DataPreprocessor:
         cycle_boundaries = self._detect_cycle_boundaries(
             raw_data.data,
             raw_data.has_state_column,
-            parameters.boundary_method
+            parameters.boundary_method,
+            raw_data.column_mapping
         )
         
         if not cycle_boundaries:
@@ -40,11 +41,12 @@ class DataPreprocessor:
         cycle_metadata = self._calculate_cycle_metadata(
             raw_data.data,
             cycle_boundaries,
-            parameters
+            parameters,
+            raw_data.column_mapping
         )
         
         # Validate data quality
-        warnings = self._validate_data_quality(raw_data.data, cycle_metadata)
+        warnings = self._validate_data_quality(raw_data.data, cycle_metadata, raw_data.column_mapping)
         validation_warnings.extend(warnings)
         
         return PreprocessedData(
@@ -59,14 +61,30 @@ class DataPreprocessor:
         self,
         df: pd.DataFrame,
         has_state: bool,
-        method: str
+        method: str,
+        column_mapping: Dict[str, str] = None
     ) -> List[Tuple[int, int]]:
         """Detect cycle boundaries in the data"""
         
-        if method == "State-based" and has_state:
-            return self._detect_boundaries_by_state(df)
+        # Get actual column names from mapping
+        if column_mapping is None:
+            column_mapping = {}
+        
+        command_col = column_mapping.get('Command', 'Command')
+        
+        # Filter to only charge and discharge commands (remove pause, etc.)
+        if command_col in df.columns:
+            df_filtered = df[df[command_col].str.lower().isin(['charge', 'discharge'])].copy()
+            if len(df_filtered) == 0:
+                self.logger.warning("No charge/discharge data found after filtering")
+                return []
         else:
-            return self._detect_boundaries_by_current(df)
+            df_filtered = df
+        
+        if method == "State-based" and has_state:
+            return self._detect_boundaries_by_state(df_filtered)
+        else:
+            return self._detect_boundaries_by_current(df_filtered, column_mapping)
     
     def _detect_boundaries_by_state(self, df: pd.DataFrame) -> List[Tuple[int, int]]:
         """Detect cycle boundaries using State column"""
@@ -108,12 +126,21 @@ class DataPreprocessor:
         
         return boundaries
     
-    def _detect_boundaries_by_current(self, df: pd.DataFrame) -> List[Tuple[int, int]]:
+    def _detect_boundaries_by_current(self, df: pd.DataFrame, column_mapping: Dict[str, str] = None) -> List[Tuple[int, int]]:
         """Detect cycle boundaries using current zero-crossings"""
         boundaries = []
         
+        # Get actual column name for current
+        if column_mapping is None:
+            column_mapping = {}
+        current_col = column_mapping.get('I[A]', 'I[A]')
+        
+        if current_col not in df.columns:
+            self.logger.error(f"Current column '{current_col}' not found in data")
+            return boundaries
+        
         # Identify discharge and charge segments
-        current = df['I[A]'].values
+        current = df[current_col].values
         
         # Find zero crossings
         sign_changes = np.diff(np.sign(current[current != 0]))
@@ -138,11 +165,31 @@ class DataPreprocessor:
         self,
         df: pd.DataFrame,
         boundaries: List[Tuple[int, int]],
-        parameters: ProcessingParameters
+        parameters: ProcessingParameters,
+        column_mapping: Dict[str, str] = None
     ) -> pd.DataFrame:
         """Calculate basic metadata for each cycle"""
         
         if not boundaries:
+            return pd.DataFrame()
+        
+        # Get actual column names from mapping
+        if column_mapping is None:
+            column_mapping = {}
+        
+        current_col = column_mapping.get('I[A]', 'I[A]')
+        time_col = column_mapping.get('Time[h]', 'Time[h]')
+        voltage_col = column_mapping.get('U[V]', 'U[V]')
+        
+        # Check if required columns exist
+        if current_col not in df.columns:
+            self.logger.error(f"Current column '{current_col}' not found in data columns: {df.columns.tolist()}")
+            return pd.DataFrame()
+        if time_col not in df.columns:
+            self.logger.error(f"Time column '{time_col}' not found in data columns: {df.columns.tolist()}")
+            return pd.DataFrame()
+        if voltage_col not in df.columns:
+            self.logger.error(f"Voltage column '{voltage_col}' not found in data columns: {df.columns.tolist()}")
             return pd.DataFrame()
         
         cycle_data = []
@@ -151,8 +198,8 @@ class DataPreprocessor:
             cycle_df = df.iloc[start_idx:end_idx]
             
             # Get charge and discharge segments
-            discharge_mask = cycle_df['I[A]'] < 0
-            charge_mask = cycle_df['I[A]'] > 0
+            discharge_mask = cycle_df[current_col] < 0
+            charge_mask = cycle_df[current_col] > 0
             
             discharge_df = cycle_df[discharge_mask]
             charge_df = cycle_df[charge_mask]
@@ -162,13 +209,13 @@ class DataPreprocessor:
             charge_capacity = 0
             
             if len(discharge_df) > 1:
-                time_h = discharge_df['Time[h]'].values
-                current_a = np.abs(discharge_df['I[A]'].values)
+                time_h = discharge_df[time_col].values
+                current_a = np.abs(discharge_df[current_col].values)
                 discharge_capacity = integrate.trapz(current_a, time_h)
             
             if len(charge_df) > 1:
-                time_h = charge_df['Time[h]'].values
-                current_a = charge_df['I[A]'].values
+                time_h = charge_df[time_col].values
+                current_a = np.abs(charge_df[current_col].values)  # Use absolute value for charge too
                 charge_capacity = integrate.trapz(current_a, time_h)
             
             # Calculate specific capacity
@@ -196,9 +243,9 @@ class DataPreprocessor:
                 'Efficiency_%': (discharge_capacity / charge_capacity * 100) if charge_capacity > 0 else 0,
                 'C_Rate_Charge': c_rate_charge,
                 'C_Rate_Discharge': c_rate_discharge,
-                'Voltage_Min': cycle_df['U[V]'].min() if len(cycle_df) > 0 else 0,
-                'Voltage_Max': cycle_df['U[V]'].max() if len(cycle_df) > 0 else 0,
-                'Duration_h': cycle_df['Time[h]'].max() - cycle_df['Time[h]'].min() if len(cycle_df) > 0 else 0
+                'Voltage_Min': cycle_df[voltage_col].min() if len(cycle_df) > 0 else 0,
+                'Voltage_Max': cycle_df[voltage_col].max() if len(cycle_df) > 0 else 0,
+                'Duration_h': cycle_df[time_col].max() - cycle_df[time_col].min() if len(cycle_df) > 0 else 0
             })
         
         return pd.DataFrame(cycle_data)
@@ -206,22 +253,38 @@ class DataPreprocessor:
     def _validate_data_quality(
         self,
         df: pd.DataFrame,
-        cycle_metadata: pd.DataFrame
+        cycle_metadata: pd.DataFrame,
+        column_mapping: Dict[str, str] = None
     ) -> List[str]:
         """Validate data quality and return warnings"""
         warnings = []
         
+        # Get actual column names from mapping
+        if column_mapping is None:
+            column_mapping = {}
+        
+        time_col = column_mapping.get('Time[h]', 'Time[h]')
+        voltage_col = column_mapping.get('U[V]', 'U[V]')
+        current_col = column_mapping.get('I[A]', 'I[A]')
+        
         # Check for missing values
-        missing_counts = df[['Time[h]', 'U[V]', 'I[A]']].isnull().sum()
-        if missing_counts.any():
-            warnings.append(f"Missing values detected: {missing_counts.to_dict()}")
+        check_cols = []
+        for col in [time_col, voltage_col, current_col]:
+            if col in df.columns:
+                check_cols.append(col)
+        
+        if check_cols:
+            missing_counts = df[check_cols].isnull().sum()
+            if missing_counts.any():
+                warnings.append(f"Missing values detected: {missing_counts.to_dict()}")
         
         # Check for unrealistic values
-        if (df['U[V]'] < 0).any():
-            warnings.append("Negative voltage values detected")
-        
-        if (df['U[V]'] > 10).any():
-            warnings.append("Voltage values above 10V detected")
+        if voltage_col in df.columns:
+            if (df[voltage_col] < 0).any():
+                warnings.append("Negative voltage values detected")
+            
+            if (df[voltage_col] > 10).any():
+                warnings.append("Voltage values above 10V detected")
         
         # Check cycle consistency
         if len(cycle_metadata) > 0:
