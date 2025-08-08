@@ -300,11 +300,12 @@ class AnalysisSelectorComponent:
                             'peak_prominence': peak_prominence
                         }
                         
-                        # Run analysis
+                        # Run analysis - pass cycle boundaries from preprocessing
                         dqdu_results = compute_dqdu_analysis(
                             preprocessed_data.raw_data.data,
                             cycle_selections,
-                            params
+                            params,
+                            cycle_boundaries=preprocessed_data.cycle_boundaries
                         )
                         
                         # Create plot from results
