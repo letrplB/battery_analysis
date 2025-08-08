@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from typing import Dict, Any, List
 import logging
 
-from ..core.data_models import (
+from core.data_models import (
     PreprocessedData,
     AnalysisConfig,
     AnalysisResults

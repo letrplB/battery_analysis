@@ -3,7 +3,7 @@ import pandas as pd
 from typing import Optional
 import logging
 
-from ..core.data_models import AnalysisResults
+from core.data_models import AnalysisResults
 
 logger = logging.getLogger(__name__)
 

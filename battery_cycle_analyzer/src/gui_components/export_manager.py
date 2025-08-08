@@ -4,7 +4,7 @@ from typing import Optional
 import io
 import logging
 
-from ..core.data_models import AnalysisResults, PreprocessedData
+from core.data_models import AnalysisResults, PreprocessedData
 
 logger = logging.getLogger(__name__)
 

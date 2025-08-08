@@ -4,7 +4,7 @@ from typing import List, Tuple, Optional
 from scipy import integrate
 import logging
 
-from .data_models import (
+from core.data_models import (
     RawBatteryData, 
     ProcessingParameters, 
     PreprocessedData
