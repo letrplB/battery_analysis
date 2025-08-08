@@ -3,7 +3,7 @@ from typing import Dict, Tuple
 import chardet
 from pathlib import Path
 
-from .data_models import FileMetadata, RawBatteryData
+from core.data_models import FileMetadata, RawBatteryData
 
 
 class DataLoader:

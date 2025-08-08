@@ -1,6 +1,10 @@
 import streamlit as st
 import logging
+import sys
 from pathlib import Path
+
+# Add src directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
 
 # Import GUI components
 from gui_components.data_input import DataInputComponent

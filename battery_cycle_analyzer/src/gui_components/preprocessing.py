@@ -2,12 +2,12 @@ import streamlit as st
 from typing import Optional, List, Tuple
 import logging
 
-from ..core.data_models import (
+from core.data_models import (
     RawBatteryData,
     ProcessingParameters,
     PreprocessedData
 )
-from ..core.preprocessor import DataPreprocessor
+from core.preprocessor import DataPreprocessor
 
 logger = logging.getLogger(__name__)
 

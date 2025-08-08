@@ -3,8 +3,8 @@ import tempfile
 from typing import Optional
 import logging
 
-from ..core.data_loader import DataLoader
-from ..core.data_models import RawBatteryData
+from core.data_loader import DataLoader
+from core.data_models import RawBatteryData
 
 logger = logging.getLogger(__name__)
 
