@@ -1,101 +1,198 @@
-# Battery Cycle Analyzer - Source Code Structure
+# Battery Cycle Analyzer - Source Code Documentation
 
-## 📁 Directory Structure
+## Directory Structure
 
 ```
 src/
-├── gui_modular.py          # Main entry point - modular GUI application
-├── core/                   # Core data processing pipeline
-│   ├── data_models.py      # Data structures and models
-│   ├── encoding_detector.py # File encoding detection
-│   ├── metadata_parser.py  # Metadata extraction from headers
-│   ├── raw_data_parser.py  # Raw data parsing and validation
-│   ├── test_plan_parser.py # Test plan parsing for C-rates
-│   ├── data_loader.py      # Orchestrates file loading
-│   └── preprocessor.py     # Data preprocessing and cycle detection
-├── analysis_modes/         # Analysis implementations
-│   ├── standard_cycle.py   # Standard capacity/retention analysis
-│   └── dqdu_analysis.py    # Differential capacity (dQ/dU) analysis
-├── gui_components/         # Modular GUI components
-│   ├── data_input.py       # File upload and data loading
-│   ├── preprocessing.py    # Parameter configuration
-│   ├── analysis_selector.py # Analysis mode selection
-│   ├── results_viewer.py   # Results display
-│   └── export_manager.py   # Export functionality
-└── legacy/                 # Previous implementations (deprecated)
-    ├── analyzer.py         # Original analysis functions
-    ├── gui.py             # Original monolithic GUI
-    └── gui_refactored.py  # Intermediate refactored version
+├── gui_modular.py           # Main application entry point
+├── core/                    # Core data processing modules
+│   ├── data_models.py       # Data structures and type definitions
+│   ├── data_loader.py       # File loading orchestration
+│   ├── data_cleaner.py      # Data cleaning and device profiles
+│   ├── preprocessor.py      # Cycle detection and preprocessing
+│   ├── encoding_detector.py # Character encoding detection
+│   ├── metadata_parser.py   # Header metadata extraction
+│   ├── raw_data_parser.py   # Raw data parsing and validation
+│   └── test_plan_parser.py  # Test plan C-rate extraction
+├── analysis_modes/          # Analysis implementations
+│   ├── standard_cycle.py    # Standard capacity/efficiency analysis
+│   └── dqdu_analysis.py     # Differential capacity (dQ/dU) analysis
+└── gui_components/          # Modular UI components
+    ├── data_input.py        # File upload and device selection
+    ├── preprocessing.py     # Parameter configuration interface
+    ├── analysis_selector.py # Analysis mode selection
+    ├── results_viewer.py    # Results display and visualization
+    └── export_manager.py    # Data export functionality
 ```
 
-## 🚀 Quick Start
+## Architecture Overview
 
-Run the main application:
-```bash
-streamlit run gui_modular.py
+### Data Processing Pipeline
+
 ```
-
-## 🏗️ Architecture
-
-### Data Flow
-1. **Input**: User uploads battery test file
-2. **Preprocessing**: Data validation and cycle detection
-3. **Analysis**: Mode-specific analysis (standard/dQ/dU)
-4. **Output**: Results visualization and export
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│ Data Input  │────▶│ Preprocessing│────▶│   Analysis   │
+│             │     │              │     │              │
+│ • File      │     │ • Cleaning   │     │ • Standard   │
+│ • Device    │     │ • Cycle      │     │ • dQ/dU      │
+│ • Test Plan │     │   Detection  │     │ • Combined   │
+└─────────────┘     └──────────────┘     └──────────────┘
+                                                 │
+                                                 ▼
+                          ┌──────────────┐     ┌──────────────┐
+                          │   Results    │────▶│    Export    │
+                          │              │     │              │
+                          │ • Plots      │     │ • CSV        │
+                          │ • Tables     │     │ • Excel      │
+                          │ • Metrics    │     │ • JSON       │
+                          └──────────────┘     └──────────────┘
+```
 
 ### Module Responsibilities
 
-#### Core (`core/`)
-- **data_models.py**: Defines data structures used throughout the application
-- **data_loader.py**: Handles file parsing and initial validation
-- **preprocessor.py**: Performs cycle detection and data preparation
+#### Core Modules (`core/`)
+
+**data_models.py**
+- Defines all data structures (RawBatteryData, PreprocessedData, AnalysisResults)
+- Type hints and validation models
+- Shared constants and enumerations
+
+**data_loader.py**
+- Orchestrates the file loading process
+- Delegates to appropriate parsers based on device type
+- Handles error recovery and validation
+
+**data_cleaner.py**
+- Device-specific data cleaning profiles
+- Column mapping and standardization
+- Unit conversions and formatting
+
+**preprocessor.py**
+- Cycle boundary detection (state-based and zero-crossing)
+- Data validation and quality checks
+- Capacity calculation and metadata extraction
 
 #### Analysis Modes (`analysis_modes/`)
-- **standard_cycle.py**: Calculates capacity, retention, efficiency
-- **dqdu_analysis.py**: Performs differential capacity analysis
+
+**standard_cycle.py**
+- Capacity, retention, and efficiency calculations
+- Trend analysis and statistics
+- Visualization generation
+
+**dqdu_analysis.py**
+- Differential capacity computation
+- Peak detection and analysis
+- Phase transition identification
 
 #### GUI Components (`gui_components/`)
-- **data_input.py**: Manages file upload interface
-- **preprocessing.py**: Handles parameter configuration UI
-- **analysis_selector.py**: Provides analysis mode selection and settings
-- **results_viewer.py**: Displays analysis results and plots
-- **export_manager.py**: Manages data export in various formats
 
-## 🔄 Processing Pipeline
+**data_input.py**
+- File upload interface
+- Device type selection
+- Test plan upload and parsing
 
-```
-File Upload → Data Loading → Preprocessing → Analysis → Results → Export
-     ↓             ↓              ↓             ↓          ↓         ↓
-data_input → data_loader → preprocessor → analysis → viewer → export
-                                            modes
-```
+**preprocessing.py**
+- Parameter configuration (material weight, capacity)
+- C-rate settings
+- Boundary detection options
 
-## 📝 Adding New Features
+**analysis_selector.py**
+- Analysis mode tabs (Standard, dQ/dU, Combined)
+- Mode-specific settings
+- Analysis execution
 
-### Adding a New Analysis Mode
-1. Create new file in `analysis_modes/`
-2. Implement analysis class/functions
-3. Add to `analysis_modes/__init__.py`
-4. Update `analysis_selector.py` to include new mode
+**results_viewer.py**
+- Results visualization
+- Interactive plots
+- Data tables
 
-### Adding a New Export Format
-1. Update `export_manager.py`
-2. Add format conversion logic
-3. Update UI to show new option
+**export_manager.py**
+- Multiple export formats
+- Report generation
+- Advanced export options
 
-## 🧪 Testing
+## Key Design Patterns
 
-Run individual modules for testing:
-```python
+### 1. Modular Architecture
+Each component has a single responsibility and communicates through well-defined interfaces.
+
+### 2. Data Pipeline
+Data flows through discrete processing stages with validation at each step.
+
+### 3. Device Abstraction
+Device-specific logic is encapsulated in the DeviceType enum and associated cleaners.
+
+### 4. Component Isolation
+GUI components are independent and can be modified without affecting others.
+
+## Adding New Features
+
+### New Device Support
+1. Add device to `DeviceType` enum in `data_cleaner.py`
+2. Implement cleaning profile in `DataCleaner`
+3. Add parser logic if needed
+
+### New Analysis Mode
+1. Create module in `analysis_modes/`
+2. Implement analysis logic following existing patterns
+3. Add UI component in `analysis_selector.py`
+
+### New Export Format
+1. Extend `export_manager.py`
+2. Add format conversion method
+3. Update UI options
+
+## Development Guidelines
+
+### Code Style
+- Use type hints for all function parameters
+- Follow PEP 8 naming conventions
+- Add docstrings to all public functions
+- Keep functions focused and under 50 lines
+
+### Error Handling
+- Use logging for debugging information
+- Provide user-friendly error messages
+- Validate data at module boundaries
+- Handle edge cases gracefully
+
+### Testing
+Run individual modules:
+```bash
 python -m core.data_loader
 python -m analysis_modes.standard_cycle
 ```
 
-## 📚 Legacy Code
+Run the full application:
+```bash
+streamlit run gui_modular.py
+```
 
-The `legacy/` folder contains previous implementations:
-- **analyzer.py**: Original analysis functions (replaced by core modules)
-- **gui.py**: Original monolithic GUI (replaced by modular components)
-- **gui_refactored.py**: Intermediate version
+## Performance Considerations
 
-These files are kept for reference but should not be used for new development.
+- Large files (>100MB) are processed in chunks
+- Cycle detection uses vectorized operations
+- Plots use sampling for very large datasets
+- Caching is used for expensive computations
+
+## Dependencies
+
+Core dependencies:
+- `streamlit`: Web application framework
+- `pandas`: Data manipulation
+- `numpy`: Numerical operations
+- `scipy`: Scientific computing
+- `plotly`: Interactive visualizations
+
+Optional dependencies:
+- `openpyxl`: Excel file support
+- `xlsxwriter`: Excel export
+- `chardet`: Encoding detection
+
+## Future Improvements
+
+- [ ] Add more analysis modes (EIS, rate capability)
+- [ ] Implement data caching for faster reanalysis
+- [ ] Add batch processing for multiple files
+- [ ] Create REST API for programmatic access
+- [ ] Add unit tests for core modules
