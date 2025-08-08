@@ -1,196 +1,203 @@
-# 🔋 Battery Cycle Analyzer
+# Battery Cycle Analyzer
 
-A Python-based tool for analyzing battery cycle stability data from Basytec Battery Test System files. This tool provides automated parsing, cycle detection, capacity calculation, and visualization capabilities through a user-friendly web interface.
+A modern, modular Python application for analyzing battery cycle stability data from various battery test systems. Features automated parsing, cycle detection, capacity calculation, differential capacity (dQ/dU) analysis, and professional visualizations through a clean web interface.
 
-## 🚀 Quick Start
+**Note:** This package is part of the [battery_analysis](https://github.com/letrplB/battery_analysis) repository, which contains multiple battery analysis tools sharing a common environment.
 
-### **Recommended Method**
+## Features
 
-1. **Windows**: Double-click `quick_start.bat`
-2. **Mac/Linux**: Run `python3 quick_start.py`
+- **Multi-format Support**: Basytec, Arbin, Neware, BioLogic, Maccor, and generic CSV formats
+- **Advanced Analysis Modes**:
+  - Standard cycle analysis (capacity, retention, efficiency)
+  - Differential capacity (dQ/dU) analysis for degradation mechanisms
+  - Combined analysis mode for comprehensive insights
+- **Professional Interface**: Clean, icon-based UI with Lucide icons
+- **Flexible Export**: CSV, Excel, JSON formats with detailed reports
 
-**That's it!** The application will:
-- ✅ Create a virtual environment automatically
-- ✅ Install all dependencies from the root `requirements.txt`
-- ✅ Open in your web browser at http://localhost:8501
+## Quick Start
 
-### **Alternative Methods**
+### Requirements
 
-- **Windows Setup**: Run `deployment/windows/setup_windows.bat` for one-time setup + desktop shortcut
-- **Cross-Platform**: Use `deployment/cross_platform/launch.py`
-- **PowerShell**: Run `deployment/windows/run_battery_analyzer.ps1`
+- Python 3.8 or higher
+- pip (Python package installer)
 
-## 📋 Requirements
+### Setup from GitHub
 
-- **Python 3.8+** - [Download from python.org](https://python.org) (check "Add to PATH" during installation)
-- **Internet connection** (for first-time setup only)
+**For detailed setup instructions after cloning from GitHub, see [SETUP.md](SETUP.md)**
 
-## 📖 Usage
+### Quick Installation
 
-1. **Start** the application using one of the methods above
-2. **Upload** your Basytec data file (.txt or .csv)
-3. **Configure** analysis parameters:
-   - Active material weight (grams)
-   - Theoretical capacity (Ah)
-   - C-rate configurations (auto-detected from test plans)
-4. **Click "Analyze"** to process your data
-5. **View results** and download CSV files
+1. Clone the main repository:
+   ```bash
+   git clone https://github.com/letrplB/battery_analysis.git
+   cd battery_analysis
+   ```
 
-## 📁 Supported File Format
+2. Create and activate virtual environment (at repository root):
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-### **Basytec Battery Test System Files**
+3. Install dependencies (from repository root):
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-The tool expects files with:
-- **Metadata headers** starting with `~`
-- **Space/tab-separated** data columns
-- **Required columns**: `Time[h]`, `Command`, `U[V]`, `I[A]`, `State`
+4. Navigate to this package:
+   ```bash
+   cd battery_cycle_analyzer
+   ```
 
-**Example file structure:**
-```
-~Resultfile from Basytec Battery Test System
-~Date and Time of Data Converting: 19.05.2025 14:36:50
-~Name of Test: KM_KMFO_721_F1_E5 50mAhg 2xF 05052025
-~Battery: KM-KMFO-721-F1E5(16) 50mAh 2xF
-~
-~Time[h] DataSet DateTime t-Step[h] Command U[V] I[A] State ...
-0.000000 1 05.05.2025 14:36:06 0.000000 Pause 2.875 0 0 ...
-0.001000 2 05.05.2025 14:36:07 0.001000 Charge 2.876 0.005 0 ...
-```
+### Running the Application
 
-### **Test Plan Files (Optional)**
-
-Upload `.txt` test plan files for automatic C-rate detection:
-```
-Charge                I=0.1CA    U>3.9V
-Discharge             I=0.1CA    U<1.5V  
-Cycle-end             Count=3
-
-Charge                I=0.2CA    U>3.9V
-Discharge             I=0.2CA    U<1.5V
-Cycle-end             Count=5
-```
-
-## 🔬 Analysis Features
-
-### **Cycle Detection**
-- **State-based** (Recommended): Uses the `State` column to identify cycle boundaries
-- **Zero-crossing**: Detects boundaries based on current sign changes
-
-### **Capacity Calculation**
-- Trapezoidal integration of current over time
-- Absolute capacity (Ah) and specific capacity (mAh/g)
-- Separate analysis for charge and discharge cycles
-
-### **Visualizations**
-- Capacity vs cycle number trends
-- Specific capacity evolution
-- Voltage range analysis
-- Cycle duration patterns
-
-### **Export Options**
-- **CSV files** with metadata and analysis parameters
-- **Interactive plots** with zoom and export capabilities
-- **Detailed logs** for troubleshooting
-
-## 🆘 Troubleshooting
-
-### **Python Installation Issues**
-
-**"Python is not recognized"**
-1. Install Python from [python.org](https://python.org)
-2. ✅ **IMPORTANT**: Check "Add Python to PATH" during installation
-3. Restart your computer
-4. Verify: `python --version` should work
-
-**Quick Python Install (Windows):**
-```cmd
-# Windows 10/11 with winget
-winget install Python.Python.3
-
-# Or with PowerShell
-Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.8/python-3.11.8-amd64.exe" -OutFile "python-installer.exe"
-Start-Process -FilePath "python-installer.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
-```
-
-### **Application Issues**
-
-**Package errors**: Delete any `venv` folder and run the quick start script again
-
-**Port in use**: Change port in launcher script (e.g., `--server.port 8502`)
-
-**Browser doesn't open**: Manually go to `http://localhost:8501`
-
-**Large file uploads**: May take time - be patient during processing
-
-### **Advanced Options**
-
-**Running from Command Line:**
 ```bash
-# Navigate to the tool directory
-cd battery_cycle_analyzer
-
-# Install dependencies (one time)
-pip install -r ../requirements.txt
-
-# Start application
-streamlit run src/gui.py
+streamlit run src/gui_modular.py
 ```
 
-**Multiple Instances:** Edit launcher scripts to use different ports (8501, 8502, 8503, etc.)
+The application will open in your default web browser at `http://localhost:8501`
 
-## 💡 Launcher Comparison
+## Usage Guide
 
-| Script | Platform | Virtual Env | Auto-Install | Best For |
-|--------|----------|-------------|--------------|----------|
-| `quick_start.bat` | Windows | ✅ | ✅ | **End users** |
-| `quick_start.py` | All | ✅ | ✅ | **Cross-platform** |
-| `setup_windows.bat` | Windows | ❌ | ✅ | **One-time setup** |
-| `run_battery_analyzer.bat` | Windows | ❌ | ✅ | **Fallback option** |
-| `launch.py` | All | ❌ | ✅ | **Legacy support** |
+### 1. Data Input
 
-**Recommendation**: Start with `quick_start.bat` (Windows) or `quick_start.py` (Mac/Linux). These create isolated virtual environments and have the best error handling.
+- **Select Device Type**: Choose your battery tester (Basytec, Arbin, Neware, etc.)
+- **Upload Data File**: Drag and drop or browse for your test data (.txt or .csv)
+- **Optional Test Plan**: Upload test plan file for automatic C-rate configuration
 
-## 🔧 For Developers
+### 2. Analysis Parameters
 
-### **Project Structure**
+Configure your analysis settings:
+- **Active Material Weight** (grams)
+- **Theoretical Capacity** (Ah)
+- **C-Rate Configuration** (manual or from test plan)
+- **Boundary Detection Method** (State-based or Zero-crossing)
+- **Baseline Cycle** for retention calculations
+
+### 3. Analysis Modes
+
+Choose from three analysis modes:
+
+#### Standard Cycle Analysis
+- Capacity vs. cycle trends
+- Retention and efficiency tracking
+- Voltage range evolution
+- Cycle-by-cycle statistics
+
+#### dQ/dU Analysis
+- Differential capacity curves
+- Peak detection for phase transitions
+- Degradation mechanism identification
+- Multi-cycle comparison
+
+#### Combined Analysis
+- Both standard and dQ/dU analysis
+- Optimized settings for comprehensive analysis
+- Unified reporting
+
+### 4. Export Results
+
+Download your analysis results in multiple formats:
+- **CSV**: Raw data and analysis results
+- **Excel**: Multi-sheet workbook with all data
+- **JSON**: Machine-readable format
+- **Report**: Text summary of findings
+
+## Supported File Formats
+
+### Basytec Format
+- Metadata headers starting with `~`
+- Space/tab-separated columns
+- European decimal format (comma as decimal separator)
+
+### Arbin Format
+- Standard CSV structure
+- Time in seconds (automatically converted to hours)
+
+### Other Formats
+- Neware, BioLogic, Maccor: Device-specific parsers
+- Generic CSV: Flexible column mapping
+
+## Project Structure
+
 ```
-battery_analysis/                # Root directory
-├── requirements.txt            # Shared dependencies
-├── battery_cycle_analyzer/     # This tool
-│   ├── quick_start.bat         # Main Windows launcher
-│   ├── quick_start.py          # Main cross-platform launcher
-│   ├── src/
-│   │   ├── gui.py             # Streamlit web interface
-│   │   └── analyzer.py        # Core analysis engine
-│   ├── deployment/            # Alternative launchers
-│   └── tests/                 # Test scripts
-└── [future_tools]/            # Other battery analysis tools
+battery_cycle_analyzer/
+├── src/
+│   ├── gui_modular.py           # Main application entry
+│   ├── core/                    # Core functionality
+│   │   ├── data_loader.py       # File loading logic
+│   │   ├── data_cleaner.py      # Data cleaning utilities
+│   │   ├── preprocessor.py      # Data preprocessing
+│   │   ├── data_models.py       # Data structures
+│   │   └── test_plan_parser.py  # Test plan parsing
+│   ├── analysis_modes/          # Analysis algorithms
+│   │   ├── standard_cycle.py    # Standard analysis
+│   │   └── dqdu_analysis.py     # dQ/dU analysis
+│   └── gui_components/          # UI components
+│       ├── data_input.py        # File upload interface
+│       ├── preprocessing.py     # Parameter configuration
+│       ├── analysis_selector.py # Analysis mode selection
+│       ├── results_viewer.py    # Results display
+│       └── export_manager.py    # Export functionality
+├── data/                        # Data directory
+│   └── output/                  # Export location
+├── logs/                        # Application logs
+└── README.md                    # This file
 ```
 
-### **Dependencies**
-- `streamlit>=1.28.0` - Web application framework
-- `pandas>=1.5.0` - Data manipulation
-- `numpy>=1.24.0` - Numerical computing
-- `scipy>=1.10.0` - Scientific computing (integration)
-- `plotly>=5.15.0` - Interactive visualizations
-- `matplotlib>=3.6.0` - Additional plotting
+## Advanced Configuration
 
-### **Virtual Environment Benefits**
-- ✅ No conflicts with other Python projects
-- ✅ Clean, isolated package installation
-- ✅ Reproducible environment
-- ✅ Safe system Python management
+### Streamlit Configuration
 
----
+The application uses Streamlit's configuration system. Create a `.streamlit/config.toml` file to customize:
 
-## 📚 Additional Resources
+```toml
+[theme]
+primaryColor = "#3b82f6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+```
 
-**For detailed launcher information**: See `LAUNCHER_GUIDE.md`
+### Custom Device Profiles
 
-**For file format questions**: Upload a sample file - the tool provides helpful error messages
+Add support for new device types by extending the `DeviceType` enum in `src/core/data_cleaner.py` and implementing the corresponding parser.
 
-**For development**: Check the `tests/` directory for example scripts
+## Troubleshooting
 
----
+### Common Issues
 
-*This tool is provided for research and educational purposes.* 
+**Port Already in Use**
+```bash
+streamlit run src/gui_modular.py --server.port 8502
+```
+
+**Large File Processing**
+- Files over 100MB may take time to process
+- Consider splitting very large datasets
+
+**Memory Issues**
+- Close other applications
+- Process files in smaller batches
+
+### Debug Mode
+
+Enable detailed logging by setting the log level:
+```python
+logging.basicConfig(level=logging.DEBUG)
+```
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+- Code follows the existing modular architecture
+- New features include appropriate error handling
+- UI changes maintain the clean, professional aesthetic
+
+## License
+
+This tool is provided for research and educational purposes.
+
+## Support
+
+For issues or questions, please check the logs directory for detailed error messages or create an issue in the project repository.
