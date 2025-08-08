@@ -18,10 +18,7 @@ from core.data_loader import DataLoader
 from core.preprocessor import DataPreprocessor
 from analysis_modes.standard_cycle import StandardCycleAnalyzer
 
-# Import existing modules for dQ/dU (we'll refactor these later)
-import sys
-sys.path.append(str(Path(__file__).parent))
-from dqdu_analyzer import compute_dqdu_analysis
+from analysis_modes.dqdu_analysis import compute_dqdu_analysis
 
 
 # Configure logging
