@@ -13,7 +13,6 @@ import io
 import traceback
 from analyzer import parse_header, load_data, analyze_cycles, export_results
 from dqdu_analyzer import compute_dqdu_analysis, get_available_cycles_for_dqdu
-import dqdu_analyzer
 import re
 from typing import List, Dict, Tuple
 
@@ -537,174 +536,6 @@ def main():
                             st.subheader("📋 Cycle Results")
                             st.dataframe(results_df, use_container_width=True)
                         
-                        # dQ/dU Analysis Section
-                        if analysis_mode in ["dQ/dU Analysis", "Combined Analysis"]:
-                            st.subheader("🔬 dQ/dU Analysis")
-                            
-                            # Get available cycles
-                            available_cycles = dqdu_analyzer.get_available_cycles(df)
-                            
-                            if len(available_cycles) == 0:
-                                st.error("No cycles available for dQ/dU analysis")
-                            else:
-                                # dQ/dU Configuration
-                                with st.expander("⚙️ dQ/dU Configuration", expanded=True):
-                                    col1, col2 = st.columns(2)
-                                    
-                                    with col1:
-                                        # Cycle selection
-                                        st.markdown("**Cycle Selection**")
-                                        
-                                        # Format cycle options for display
-                                        cycle_options = [f"Cycle {num} - {type_}" for num, type_ in available_cycles]
-                                        selected_cycle_indices = st.multiselect(
-                                            "Select cycles for dQ/dU analysis",
-                                            range(len(cycle_options)),
-                                            default=list(range(min(3, len(cycle_options)))),
-                                            format_func=lambda x: cycle_options[x]
-                                        )
-                                        
-                                        selected_cycles = [available_cycles[i] for i in selected_cycle_indices]
-                                        
-                                        # Voltage range filter
-                                        st.markdown("**Voltage Range**")
-                                        use_voltage_filter = st.checkbox("Apply voltage range filter", value=False)
-                                        if use_voltage_filter:
-                                            voltage_min = st.number_input("Min voltage (V)", value=1.5, step=0.1)
-                                            voltage_max = st.number_input("Max voltage (V)", value=3.9, step=0.1)
-                                            voltage_range = (voltage_min, voltage_max)
-                                        else:
-                                            voltage_range = None
-                                    
-                                    with col2:
-                                        # Advanced parameters
-                                        st.markdown("**Analysis Parameters**")
-                                        n_points = st.slider(
-                                            "Interpolation points",
-                                            min_value=100,
-                                            max_value=1000,
-                                            value=333,
-                                            step=10,
-                                            help="Number of points for interpolation (higher = smoother)"
-                                        )
-                                        
-                                        # Smoothing options
-                                        smoothing_method = st.selectbox(
-                                            "Smoothing method",
-                                            ["None", "Savitzky-Golay", "Moving Average"],
-                                            help="Apply smoothing to reduce noise in dQ/dU curves"
-                                        )
-                                        
-                                        smoothing_params = None
-                                        if smoothing_method == "Savitzky-Golay":
-                                            window_length = st.slider("Window length", 5, 51, 11, step=2)
-                                            poly_order = st.slider("Polynomial order", 1, 5, 3)
-                                            smoothing_params = {"method": "savgol", "window": window_length, "poly": poly_order}
-                                        elif smoothing_method == "Moving Average":
-                                            window_size = st.slider("Window size", 3, 21, 5, step=2)
-                                            smoothing_params = {"method": "moving_avg", "window": window_size}
-                                        
-                                        # Peak detection
-                                        detect_peaks = st.checkbox("Enable peak detection", value=True)
-                                        peak_prominence = 0.1
-                                        if detect_peaks:
-                                            peak_prominence = st.slider(
-                                                "Peak prominence",
-                                                min_value=0.01,
-                                                max_value=1.0,
-                                                value=0.1,
-                                                step=0.01,
-                                                help="Minimum prominence for peak detection"
-                                            )
-                                
-                                # Perform dQ/dU analysis
-                                if st.button("🔬 Run dQ/dU Analysis", type="secondary"):
-                                    with st.spinner("Computing dQ/dU analysis..."):
-                                        # Prepare parameters
-                                        params = {
-                                            'n_points': n_points,
-                                            'voltage_range': voltage_range,
-                                            'smoothing': smoothing_params,
-                                            'peak_detection': detect_peaks,
-                                            'peak_prominence': peak_prominence
-                                        }
-                                        
-                                        # Run analysis
-                                        dqdu_results = dqdu_analyzer.compute_dqdu_analysis(df, selected_cycles, params)
-                                        
-                                        # Display results
-                                        if dqdu_results:
-                                            st.success(f"✅ dQ/dU analysis completed for {len(dqdu_results)} cycles")
-                                            
-                                            # Create dQ/dU plot
-                                            st.subheader("📈 dQ/dU Plot")
-                                            
-                                            fig_dqdu = go.Figure()
-                                            
-                                            # Add traces for each selected cycle
-                                            for key, result in dqdu_results.items():
-                                                if 'error' not in result:
-                                                    cycle_info = result['metadata']
-                                                    label = f"Cycle {cycle_info['cycle_number']} ({cycle_info['half_cycle_type']})"
-                                                    
-                                                    fig_dqdu.add_trace(go.Scatter(
-                                                        x=result['voltage'],
-                                                        y=result['dq_du'],
-                                                        mode='lines',
-                                                        name=label,
-                                                        hovertemplate='Voltage: %{x:.3f} V<br>dQ/dU: %{y:.3f} mAh/V<extra></extra>'
-                                                    ))
-                                                    
-                                                    # Add peak markers if available
-                                                    if result.get('peaks') and detect_peaks:
-                                                        peaks = result['peaks']
-                                                        if len(peaks['peak_voltages']) > 0:
-                                                            fig_dqdu.add_trace(go.Scatter(
-                                                                x=peaks['peak_voltages'],
-                                                                y=peaks['peak_values'],
-                                                                mode='markers',
-                                                                marker=dict(size=10, symbol='triangle-up', color='red'),
-                                                                name=f"{label} - Peaks",
-                                                                showlegend=False,
-                                                                hovertemplate='Peak<br>V: %{x:.3f} V<br>dQ/dU: %{y:.3f}<extra></extra>'
-                                                            ))
-                                            
-                                            fig_dqdu.update_layout(
-                                                title='Differential Capacity (dQ/dU) Analysis',
-                                                xaxis_title='Voltage (V)',
-                                                yaxis_title='dQ/dU (mAh/V)',
-                                                height=600,
-                                                hovermode='x unified'
-                                            )
-                                            
-                                            st.plotly_chart(fig_dqdu, use_container_width=True)
-                                            
-                                            # Display peak information if available
-                                            if detect_peaks:
-                                                st.subheader("🎯 Peak Analysis")
-                                                peak_data = []
-                                                for key, result in dqdu_results.items():
-                                                    if 'error' not in result and result.get('peaks'):
-                                                        cycle_info = result['metadata']
-                                                        peaks = result['peaks']
-                                                        for i, v in enumerate(peaks['peak_voltages']):
-                                                            peak_data.append({
-                                                                'Cycle': cycle_info['cycle_number'],
-                                                                'Type': cycle_info['half_cycle_type'],
-                                                                'Peak Voltage (V)': f"{v:.3f}",
-                                                                'dQ/dU Value': f"{peaks['peak_values'][i]:.3f}",
-                                                                'Prominence': f"{peaks['peak_prominences'][i]:.3f}"
-                                                            })
-                                                
-                                                if peak_data:
-                                                    peak_df = pd.DataFrame(peak_data)
-                                                    st.dataframe(peak_df, use_container_width=True)
-                                                else:
-                                                    st.info("No peaks detected with current settings")
-                                            
-                                            # Store results in session state for export
-                                            st.session_state['dqdu_results'] = dqdu_results
-                        
                         # Create standard visualizations
                         if analysis_mode in ["Standard Cycle Analysis", "Combined Analysis"] and results_df is not None:
                             st.subheader("📊 Standard Analysis Visualizations")
@@ -871,6 +702,121 @@ def main():
                                 height=500
                             )
                                 st.plotly_chart(fig5, use_container_width=True)
+                        
+                        # dQ/dU Visualization
+                        if dqdu_results is not None and analysis_mode in ["dQ/dU Analysis", "Combined Analysis"]:
+                            st.subheader("🔬 dQ/dU Analysis Results")
+                            
+                            # Create tabs for dQ/dU visualizations
+                            dqdu_tab1, dqdu_tab2, dqdu_tab3 = st.tabs(["dQ/dU Plots", "Peak Analysis", "Data Export"])
+                            
+                            with dqdu_tab1:
+                                # Create dQ/dU plot
+                                fig_dqdu = go.Figure()
+                                
+                                # Color palette for multiple cycles
+                                colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
+                                
+                                for i, (key, result) in enumerate(dqdu_results.items()):
+                                    if 'error' not in result:
+                                        color = colors[i % len(colors)]
+                                        cycle_info = result['metadata']
+                                        label = f"Cycle {cycle_info['cycle_number']} ({cycle_info['half_cycle_type']})"
+                                        
+                                        fig_dqdu.add_trace(go.Scatter(
+                                            x=result['voltage'],
+                                            y=result['dq_du'],
+                                            mode='lines',
+                                            name=label,
+                                            line=dict(color=color, width=2),
+                                            hovertemplate='Voltage: %{x:.3f} V<br>dQ/dU: %{y:.2f} mAh/V<extra></extra>'
+                                        ))
+                                        
+                                        # Add peak markers if available
+                                        if result.get('peaks') and result['peaks'].get('peak_voltages'):
+                                            fig_dqdu.add_trace(go.Scatter(
+                                                x=result['peaks']['peak_voltages'],
+                                                y=result['peaks']['peak_intensities'],
+                                                mode='markers',
+                                                name=f"{label} - Peaks",
+                                                marker=dict(color=color, size=10, symbol='diamond'),
+                                                showlegend=False,
+                                                hovertemplate='Peak<br>Voltage: %{x:.3f} V<br>dQ/dU: %{y:.2f} mAh/V<extra></extra>'
+                                            ))
+                                
+                                fig_dqdu.update_layout(
+                                    title='Differential Capacity (dQ/dU) Analysis',
+                                    xaxis_title='Voltage (V)',
+                                    yaxis_title='dQ/dU (mAh/V)',
+                                    height=600,
+                                    hovermode='x unified'
+                                )
+                                st.plotly_chart(fig_dqdu, use_container_width=True)
+                            
+                            with dqdu_tab2:
+                                st.subheader("📊 Peak Analysis Summary")
+                                
+                                # Collect peak data
+                                peak_data = []
+                                for key, result in dqdu_results.items():
+                                    if 'error' not in result and result.get('peaks'):
+                                        peaks = result['peaks']
+                                        metadata = result['metadata']
+                                        for i, v in enumerate(peaks.get('peak_voltages', [])):
+                                            peak_data.append({
+                                                'Cycle': metadata['cycle_number'],
+                                                'Type': metadata['half_cycle_type'],
+                                                'Peak #': i + 1,
+                                                'Voltage (V)': f"{v:.3f}",
+                                                'dQ/dU (mAh/V)': f"{peaks['peak_intensities'][i]:.2f}",
+                                                'Prominence': f"{peaks['prominences'][i]:.3f}"
+                                            })
+                                
+                                if peak_data:
+                                    peak_df = pd.DataFrame(peak_data)
+                                    st.dataframe(peak_df, use_container_width=True)
+                                    
+                                    # Peak evolution plot if multiple cycles
+                                    unique_cycles = peak_df['Cycle'].unique()
+                                    if len(unique_cycles) > 1:
+                                        st.subheader("📈 Peak Evolution")
+                                        st.info("Track how peak positions shift across cycles - useful for degradation analysis")
+                                else:
+                                    st.info("No peaks detected. Try adjusting the peak prominence threshold.")
+                            
+                            with dqdu_tab3:
+                                st.subheader("💾 Export dQ/dU Data")
+                                
+                                # Prepare data for export
+                                export_data = []
+                                for key, result in dqdu_results.items():
+                                    if 'error' not in result:
+                                        metadata = result['metadata']
+                                        for v, q, dqdu in zip(result['voltage'], result['capacity'], result['dq_du']):
+                                            export_data.append({
+                                                'Cycle': metadata['cycle_number'],
+                                                'Type': metadata['half_cycle_type'],
+                                                'Voltage_V': v,
+                                                'Capacity_Ah': q,
+                                                'dQ_dU_mAh_V': dqdu
+                                            })
+                                
+                                if export_data:
+                                    export_df = pd.DataFrame(export_data)
+                                    
+                                    # Show preview
+                                    st.text(f"Data shape: {export_df.shape[0]} rows × {export_df.shape[1]} columns")
+                                    st.dataframe(export_df.head(20), use_container_width=True)
+                                    
+                                    # Download button
+                                    csv_buffer = io.StringIO()
+                                    export_df.to_csv(csv_buffer, index=False)
+                                    st.download_button(
+                                        label="📥 Download dQ/dU Data as CSV",
+                                        data=csv_buffer.getvalue(),
+                                        file_name=f"dqdu_analysis_{uploaded_file.name.split('.')[0]}.csv",
+                                        mime="text/csv"
+                                    )
                         
                         # Download section
                         st.subheader("💾 Download Results")
