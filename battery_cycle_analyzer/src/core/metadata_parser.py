@@ -1,0 +1,161 @@
+"""
+Metadata Parser Module
+
+Extracts metadata from battery test file headers.
+Handles various metadata formats and encoding issues.
+"""
+
+from typing import Dict, Tuple, Optional
+from pathlib import Path
+import logging
+
+from .data_models import FileMetadata
+
+logger = logging.getLogger(__name__)
+
+
+class MetadataParser:
+    """Parses metadata from battery test file headers"""
+    
+    # Known metadata field mappings
+    METADATA_MAPPINGS = {
+        'Date and Time of Data Converting': 'date_converting',
+        'Name of Test': 'test_name',
+        'Battery': 'battery_name',
+        'Start of Test': 'test_start',
+        'End of Test': 'test_end',
+        'Testchannel': 'test_channel',
+        'Operator (Test)': 'operator_test',
+        'Operator (Data converting)': 'operator_converting',
+        'Testplan': 'test_plan'
+    }
+    
+    @staticmethod
+    def parse_header(
+        file_path: Path, 
+        encoding: str
+    ) -> Tuple[FileMetadata, int, Optional[str]]:
+        """
+        Parse metadata from file header
+        
+        Args:
+            file_path: Path to the file
+            encoding: File encoding
+            
+        Returns:
+            Tuple of (metadata, header_lines_count, column_header_line)
+        """
+        metadata = FileMetadata(
+            file_name=file_path.name,
+            file_size_kb=file_path.stat().st_size / 1024,
+            total_lines=0,
+            additional_metadata={}
+        )
+        
+        header_lines = 0
+        column_header_line = None
+        
+        with open(file_path, 'r', encoding=encoding, errors='ignore') as file:
+            for line in file:
+                # Stop at first non-header line
+                if not line.startswith('~'):
+                    break
+                
+                header_lines += 1
+                
+                # Check if this is the column header line
+                if MetadataParser._is_column_header(line):
+                    column_header_line = line.strip('~').strip()
+                    logger.debug(f"Found column header at line {header_lines}")
+                    continue
+                
+                # Parse metadata from this line
+                MetadataParser._parse_metadata_line(line, metadata)
+        
+        # Count total lines in file
+        with open(file_path, 'r', encoding=encoding, errors='ignore') as file:
+            metadata.total_lines = sum(1 for _ in file)
+        
+        logger.info(f"Parsed metadata: {header_lines} header lines, "
+                   f"{metadata.total_lines} total lines")
+        
+        return metadata, header_lines, column_header_line
+    
+    @staticmethod
+    def _is_column_header(line: str) -> bool:
+        """
+        Check if a line is the column header line
+        
+        Args:
+            line: Line to check
+            
+        Returns:
+            True if this is the column header
+        """
+        # Column headers typically contain these keywords
+        column_indicators = ['Time[h]', 'DataSet', 'DateTime', 'Command', 'U[V]', 'I[A]']
+        
+        # Check if multiple indicators are present
+        matches = sum(1 for indicator in column_indicators if indicator in line)
+        
+        return matches >= 3  # Need at least 3 column names to be confident
+    
+    @staticmethod
+    def _parse_metadata_line(line: str, metadata: FileMetadata) -> None:
+        """
+        Parse a single metadata line and update metadata object
+        
+        Args:
+            line: Line to parse (starting with ~)
+            metadata: Metadata object to update
+        """
+        # Remove ~ prefix and clean
+        line = line.strip('~').strip()
+        
+        if not line or ':' not in line:
+            return
+        
+        # Split on first colon
+        key, value = line.split(':', 1)
+        key = key.strip()
+        value = value.strip()
+        
+        # Check if this is a known metadata field
+        for known_key, attr_name in MetadataParser.METADATA_MAPPINGS.items():
+            if known_key in key:
+                setattr(metadata, attr_name, value)
+                logger.debug(f"Set metadata.{attr_name} = {value}")
+                return
+        
+        # Store unknown fields in additional_metadata
+        metadata.additional_metadata[key] = value
+    
+    @staticmethod
+    def extract_test_info(metadata: FileMetadata) -> Dict[str, str]:
+        """
+        Extract key test information from metadata
+        
+        Args:
+            metadata: Metadata object
+            
+        Returns:
+            Dictionary of key test information
+        """
+        info = {}
+        
+        if metadata.test_name:
+            info['Test Name'] = metadata.test_name
+        
+        if metadata.battery_name:
+            info['Battery'] = metadata.battery_name
+        
+        if metadata.test_start and metadata.test_end:
+            info['Duration'] = f"{metadata.test_start} to {metadata.test_end}"
+        
+        if metadata.test_channel:
+            info['Channel'] = metadata.test_channel
+        
+        if metadata.operator_test:
+            info['Operator'] = metadata.operator_test
+        
+        return info

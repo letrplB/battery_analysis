@@ -76,6 +76,18 @@ class PreprocessingComponent:
     def _render_crate_config() -> List[Tuple[int, int, float, float]]:
         """Render C-rate configuration interface"""
         
+        # Check if we have parsed test plan configuration
+        if 'test_plan_config' in st.session_state and st.session_state.test_plan_config:
+            config = st.session_state.test_plan_config
+            if config.c_rate_periods:
+                st.info("📋 Using C-rates from test plan. Uncheck to customize.")
+                
+                use_test_plan = st.checkbox("Use test plan C-rates", value=True, key="use_test_plan")
+                
+                if use_test_plan:
+                    # Convert CRatePeriod objects to tuples
+                    return [period.to_tuple() for period in config.c_rate_periods]
+        
         # Initialize C-rates in session state if not present
         if 'c_rates' not in st.session_state:
             st.session_state.c_rates = [(1, 1000, 0.333, 0.333)]
