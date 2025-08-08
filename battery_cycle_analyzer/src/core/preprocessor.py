@@ -92,56 +92,70 @@ class DataPreprocessor:
             return self._detect_boundaries_by_current(df_filtered, column_mapping)
     
     def _detect_boundaries_by_state(self, df: pd.DataFrame) -> List[Tuple[int, int]]:
-        """Detect cycle boundaries using State column"""
-        boundaries = []
+        """Detect cycle boundaries using command transitions
         
-        # The legacy code approach: detect charge/discharge transitions
-        # regardless of State, which is used differently
+        A cycle can be either:
+        - Discharge followed by Charge (standard)
+        - Charge followed by Discharge (formation cycles)
+        
+        Each cycle boundary includes both phases
+        """
+        boundaries = []
         
         # Ensure we have Command column
         if 'Command' not in df.columns:
             self.logger.error("Command column not found for cycle detection")
             return boundaries
         
-        # Get indices
-        indices = df.index.tolist()
+        # Get command sequence
+        commands = df['Command'].str.lower().values
+        indices = df.index.values
         
-        # Track current cycle
-        cycle_start = None
-        in_discharge = False
-        in_charge = False
+        if len(commands) == 0:
+            return boundaries
         
-        for i, idx in enumerate(indices):
-            command = df.loc[idx, 'Command'].lower()
-            
-            if command == 'discharge':
-                if not in_discharge:
-                    # Start of discharge
-                    if cycle_start is None:
-                        cycle_start = idx
-                    in_discharge = True
-                    in_charge = False
-            
-            elif command == 'charge':
-                if not in_charge:
-                    # Start of charge
-                    if cycle_start is None:
-                        cycle_start = idx
-                    in_charge = True
-                    in_discharge = False
-            
-            # Check for cycle completion (next discharge after charge)
-            if i < len(indices) - 1:
-                next_command = df.loc[indices[i + 1], 'Command'].lower()
-                if command == 'charge' and next_command == 'discharge':
-                    # End of cycle
-                    if cycle_start is not None:
-                        boundaries.append((cycle_start, idx))
-                        cycle_start = indices[i + 1]  # Start next cycle
+        # Determine cycle pattern from first commands
+        first_cmd = commands[0]
         
-        # Add last cycle if exists
-        if cycle_start is not None and cycle_start < indices[-1]:
-            boundaries.append((cycle_start, indices[-1]))
+        # Track command changes
+        i = 0
+        while i < len(commands):
+            current_cmd = commands[i]
+            
+            # Start of a potential cycle
+            if current_cmd in ['discharge', 'charge']:
+                cycle_start = indices[i]
+                first_phase = current_cmd
+                
+                # Find where first phase ends
+                while i < len(commands) and commands[i] == first_phase:
+                    i += 1
+                
+                # Check if followed by opposite phase
+                if i < len(commands):
+                    second_phase = commands[i]
+                    expected_second = 'charge' if first_phase == 'discharge' else 'discharge'
+                    
+                    if second_phase == expected_second:
+                        # Find where second phase ends
+                        while i < len(commands) and commands[i] == second_phase:
+                            i += 1
+                        
+                        # Complete cycle found
+                        cycle_end = indices[i - 1] if i > 0 else indices[-1]
+                        boundaries.append((cycle_start, cycle_end))
+                    # else: same phase repeated or pause, not a complete cycle
+            else:
+                i += 1
+        
+        self.logger.info(f"Detected {len(boundaries)} complete cycles")
+        
+        # Debug: Log first and last few cycles
+        if boundaries:
+            self.logger.debug(f"First cycle indices: {boundaries[0]}")
+            self.logger.debug(f"Last cycle indices: {boundaries[-1]}")
+            if len(boundaries) > 1:
+                self.logger.debug(f"Second cycle indices: {boundaries[1]}")
         
         return boundaries
     

@@ -12,73 +12,58 @@ from typing import Dict, List, Tuple, Optional, Any
 import logging
 
 
-def extract_cycle_data(df: pd.DataFrame, cycle_number: int, half_cycle_type: str = 'discharge') -> pd.DataFrame:
+def extract_cycle_data(df: pd.DataFrame, cycle_number: int, half_cycle_type: str, 
+                      cycle_boundaries: List[Tuple[int, int]]) -> pd.DataFrame:
     """
-    Extract specific half-cycle data for dQ/dU analysis.
+    Extract specific half-cycle data for dQ/dU analysis using preprocessed boundaries.
     
     Args:
         df: Main dataframe with battery data
-        cycle_number: Cycle number to extract
+        cycle_number: Cycle number to extract (1-indexed)
         half_cycle_type: 'charge' or 'discharge'
+        cycle_boundaries: Pre-computed cycle boundaries from preprocessing
         
     Returns:
         DataFrame with the extracted cycle data
+        
+    Raises:
+        ValueError: If cycle number is invalid or no data found for the specified phase
     """
     import logging
     logger = logging.getLogger(__name__)
     
-    # Log available columns for debugging
-    logger.info(f"Available columns in dataframe: {df.columns.tolist()}")
+    # Validate cycle number
+    if not (0 < cycle_number <= len(cycle_boundaries)):
+        raise ValueError(f"Invalid cycle number {cycle_number}. Available: 1-{len(cycle_boundaries)}")
     
-    # Filter to charge/discharge commands only
-    df_filtered = df[df['Command'].str.lower().isin(['charge', 'discharge'])].copy()
+    # Get cycle boundaries
+    start_idx, end_idx = cycle_boundaries[cycle_number - 1]  # Convert to 0-indexed
+    cycle_data = df.iloc[start_idx:end_idx + 1].copy()
     
-    # Detect cycles - use proper pairing of charge/discharge
-    command = df_filtered['Command'].str.lower()
+    # Check for adjacent pause/rest periods to capture full voltage range
+    if start_idx > 0 and df.iloc[start_idx - 1]['Command'].lower() in ['pause', 'rest']:
+        pause_start = start_idx - 1
+        while pause_start > 0 and df.iloc[pause_start - 1]['Command'].lower() in ['pause', 'rest']:
+            pause_start -= 1
+        start_idx = pause_start
+        cycle_data = df.iloc[start_idx:end_idx + 1].copy()
     
-    # Track command changes
-    command_changes = command != command.shift(1)
+    if end_idx < len(df) - 1 and df.iloc[end_idx + 1]['Command'].lower() in ['pause', 'rest']:
+        pause_end = end_idx + 1
+        while pause_end < len(df) - 1 and df.iloc[pause_end + 1]['Command'].lower() in ['pause', 'rest']:
+            pause_end += 1
+        end_idx = pause_end
+        cycle_data = df.iloc[start_idx:end_idx + 1].copy()
     
-    # Initialize cycle counter
-    cycle_num = 0
-    cycle_numbers = []
-    current_phase = None
+    # Filter to the specific half-cycle type
+    filtered_data = cycle_data[cycle_data['Command'].str.lower() == half_cycle_type.lower()].copy()
     
-    for i, (cmd, change) in enumerate(zip(command, command_changes)):
-        if change:  # Command changed
-            if current_phase == 'discharge' and cmd == 'charge':
-                # Discharge -> Charge: same cycle
-                pass
-            elif current_phase == 'charge' and cmd == 'discharge':
-                # Charge -> Discharge: new cycle
-                cycle_num += 1
-            elif current_phase is None:
-                # First command
-                cycle_num = 1
-            else:
-                # Other transitions
-                cycle_num += 1
-            current_phase = cmd
-        cycle_numbers.append(cycle_num)
+    if filtered_data.empty:
+        raise ValueError(f"No {half_cycle_type} data found in cycle {cycle_number}")
     
-    df_filtered['CycleNumber'] = cycle_numbers
+    logger.info(f"Cycle {cycle_number} ({half_cycle_type}): {len(filtered_data)} points from index {start_idx} to {end_idx}")
     
-    # Log what we found
-    logger.info(f"Total cycles found: {df_filtered['CycleNumber'].max()}")
-    
-    # Filter to the specific cycle and type
-    cycle_data = df_filtered[
-        (df_filtered['CycleNumber'] == cycle_number) & 
-        (df_filtered['Command'].str.lower() == half_cycle_type.lower())
-    ].copy()
-    
-    if cycle_data.empty:
-        logger.warning(f"No data found for cycle {cycle_number} ({half_cycle_type})")
-        logger.warning(f"Available cycle numbers: {sorted(df_filtered['CycleNumber'].unique())[:20]}")
-        logger.warning(f"Commands in filtered data: {df_filtered['Command'].unique()}")
-        raise ValueError(f"No data found for cycle {cycle_number} ({half_cycle_type})")
-    
-    return cycle_data
+    return filtered_data
 
 
 def interpolate_voltage_capacity(voltage: np.ndarray, capacity: np.ndarray, 
@@ -148,7 +133,8 @@ def interpolate_voltage_capacity(voltage: np.ndarray, capacity: np.ndarray,
 
 
 def calculate_dq_du(voltage: np.ndarray, capacity: np.ndarray, 
-                    smoothing: Optional[Dict] = None) -> np.ndarray:
+                    smoothing: Optional[Dict] = None, 
+                    phase_type: str = 'discharge') -> np.ndarray:
     """
     Calculate differential capacity dQ/dU.
     
@@ -156,6 +142,7 @@ def calculate_dq_du(voltage: np.ndarray, capacity: np.ndarray,
         voltage: Voltage data (should be uniformly spaced)
         capacity: Capacity data (in Ah)
         smoothing: Optional smoothing parameters
+        phase_type: 'charge' or 'discharge' for sign convention
         
     Returns:
         dQ/dU values array (in mAh/V)
@@ -181,6 +168,13 @@ def calculate_dq_du(voltage: np.ndarray, capacity: np.ndarray,
     
     # Calculate dQ/dU (differential capacity) - already in mAh/V
     dq_du = dq / dv
+    
+    # Apply sign convention: discharge should be negative
+    # This is the standard convention in battery analysis
+    if phase_type.lower() == 'discharge':
+        dq_du = -np.abs(dq_du)  # Ensure discharge is negative
+    else:
+        dq_du = np.abs(dq_du)  # Ensure charge is positive
     
     # Check for reasonable values
     if np.all(np.abs(dq_du) < 1e-6):
@@ -271,7 +265,8 @@ def detect_peaks(dq_du: np.ndarray, voltage: np.ndarray,
 
 
 def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, str]], 
-                         params: Dict[str, Any]) -> Dict:
+                         params: Dict[str, Any], 
+                         cycle_boundaries: List[Tuple[int, int]]) -> Dict:
     """
     Main dQ/dU analysis pipeline.
     
@@ -284,16 +279,38 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
             - smoothing: Smoothing method and parameters
             - peak_detection: Enable/disable peak finding
             - peak_prominence: Minimum prominence for peaks
+            - use_common_voltage_range: Use common voltage range for all cycles (better for comparison)
+        cycle_boundaries: Pre-computed cycle boundaries from preprocessing
     
     Returns:
         Dictionary with dQ/dU results for each selected cycle
     """
     results = {}
     
+    # First pass: collect voltage ranges if we need a common range
+    voltage_ranges = []
+    if params.get('use_common_voltage_range', True):  # Default to True for better comparison
+        for cycle_num, half_cycle_type in cycle_selections:
+            try:
+                cycle_data = extract_cycle_data(df, cycle_num, half_cycle_type, cycle_boundaries)
+                voltage = cycle_data['U[V]'].values
+                voltage_ranges.append((voltage.min(), voltage.max()))
+            except Exception:
+                pass
+        
+        if voltage_ranges:
+            # Find the common voltage range (intersection of all ranges)
+            common_v_min = max(v_min for v_min, _ in voltage_ranges)
+            common_v_max = min(v_max for _, v_max in voltage_ranges)
+            logging.info(f"Using common voltage range: {common_v_min:.3f} to {common_v_max:.3f} V")
+            # Override the voltage_range parameter
+            params = params.copy()
+            params['voltage_range'] = (common_v_min, common_v_max)
+    
     for cycle_num, half_cycle_type in cycle_selections:
         try:
             # Extract cycle data
-            cycle_data = extract_cycle_data(df, cycle_num, half_cycle_type)
+            cycle_data = extract_cycle_data(df, cycle_num, half_cycle_type, cycle_boundaries)
             
             # Get voltage and capacity data
             voltage = cycle_data['U[V]'].values
@@ -311,9 +328,10 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
                     
                     # For absolute capacity column, calculate relative capacity within cycle
                     if col == 'Ah[Ah]':
-                        # Use absolute values and reset to start from 0
+                        # Calculate relative capacity from start of cycle
                         capacity = np.abs(raw_capacity - raw_capacity[0])
                         logging.info(f"Using absolute capacity column {col}, range: {raw_capacity[0]:.6f} to {raw_capacity[-1]:.6f}")
+                        logging.info(f"Capacity range for {half_cycle_type}: {capacity.min():.6f} to {capacity.max():.6f} Ah")
                     else:
                         # Cycle-specific columns should already be relative
                         capacity = np.abs(raw_capacity)
@@ -366,9 +384,9 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
             smoothing = params.get('smoothing')
             # Only pass smoothing if it's not None/none
             if smoothing and smoothing.get('method', 'none').lower() != 'none':
-                dq_du = calculate_dq_du(v_interp, q_interp, smoothing)
+                dq_du = calculate_dq_du(v_interp, q_interp, smoothing, phase_type=half_cycle_type)
             else:
-                dq_du = calculate_dq_du(v_interp, q_interp, None)
+                dq_du = calculate_dq_du(v_interp, q_interp, None, phase_type=half_cycle_type)
             
             # Check if dQ/dU has valid values
             if np.all(np.isnan(dq_du)) or len(dq_du) == 0:
@@ -409,25 +427,3 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
     
     return results
 
-
-def get_available_cycles_for_dqdu(results_df: pd.DataFrame) -> List[Tuple[int, str]]:
-    """
-    Get list of available cycles from standard analysis results.
-    
-    Args:
-        results_df: DataFrame from standard cycle analysis
-        
-    Returns:
-        List of (cycle_number, half_cycle_type) tuples
-    """
-    if results_df.empty:
-        return []
-    
-    # Filter to realistic cycles only
-    realistic_df = results_df[results_df.get('Is_Realistic', True)]
-    
-    cycles = []
-    for _, row in realistic_df.iterrows():
-        cycles.append((int(row['Cycle']), row['HalfCycleType']))
-    
-    return cycles

@@ -9,10 +9,9 @@ This package contains different analysis mode implementations:
 """
 
 from .standard_cycle import StandardCycleAnalyzer
-from .dqdu_analysis import compute_dqdu_analysis, get_available_cycles_for_dqdu
+from .dqdu_analysis import compute_dqdu_analysis
 
 __all__ = [
     'StandardCycleAnalyzer',
-    'compute_dqdu_analysis',
-    'get_available_cycles_for_dqdu'
+    'compute_dqdu_analysis'
 ]
