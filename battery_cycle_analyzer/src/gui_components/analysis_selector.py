@@ -38,8 +38,7 @@ class AnalysisSelectorComponent:
         # Create tabs for different analysis modes
         tabs = st.tabs([
             "Standard Cycle",
-            "dQ/dU Analysis", 
-            "Combined"
+            "dQ/dU Analysis"
         ])
         
         with tabs[0]:
@@ -47,9 +46,6 @@ class AnalysisSelectorComponent:
         
         with tabs[1]:
             AnalysisSelectorComponent._render_dqdu_analysis(preprocessed_data)
-        
-        with tabs[2]:
-            AnalysisSelectorComponent._render_combined_analysis(preprocessed_data)
     
     @staticmethod
     def _render_standard_analysis(preprocessed_data: PreprocessedData) -> None:
@@ -432,154 +428,3 @@ class AnalysisSelectorComponent:
         )
         
         return fig
-    
-    @staticmethod
-    def _render_combined_analysis(preprocessed_data: PreprocessedData) -> None:
-        """Render combined analysis configuration"""
-        
-        st.subheader("Combined Analysis")
-        st.info(
-            "Run both standard cycle and dQ/dU analyses with optimized settings. "
-            "This provides a comprehensive view of battery performance and degradation."
-        )
-        
-        # Get max cycles for validation
-        max_cycles = len(preprocessed_data.cycle_boundaries)
-        
-        with st.expander("What will be analyzed", expanded=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**Standard Cycle Analysis:**")
-                st.write("- All capacity and efficiency plots")
-                st.write("- Retention baseline: Cycle 30")
-                st.write("- Full cycle range analysis")
-                st.write("- Voltage evolution tracking")
-            
-            with col2:
-                st.write("**dQ/dU Analysis:**")
-                st.write("- Cycle 3 (after SEI formation)")
-                st.write("- Cycle 30 (reference state)")
-                st.write("- Both charge and discharge")
-                st.write("- Peak detection enabled")
-        
-        if st.button(
-            "Run Combined Analysis",
-            type="primary",
-            use_container_width=True,
-            key="run_combined"
-        ):
-            if max_cycles < 30:
-                st.error(f"Need at least 30 cycles for combined analysis. Found: {max_cycles}")
-                return
-                
-            with st.spinner("Running combined analysis..."):
-                try:
-                    # Run standard analysis with cycle 30 as baseline
-                    st.info("Running standard cycle analysis...")
-                    
-                    # Update parameters for cycle 30 baseline
-                    params_copy = preprocessed_data.parameters
-                    original_baseline = params_copy.baseline_cycle
-                    params_copy.baseline_cycle = 30
-                    
-                    standard_config = AnalysisConfig(
-                        mode="standard",
-                        plot_types=['capacity_vs_cycle', 'retention_vs_cycle', 
-                                   'efficiency_vs_cycle', 'voltage_range_vs_cycle']
-                    )
-                    
-                    analyzer = StandardCycleAnalyzer()
-                    standard_results = analyzer.analyze(preprocessed_data, standard_config)
-                    
-                    # Restore original baseline
-                    params_copy.baseline_cycle = original_baseline
-                    
-                    # Run dQ/dU analysis for cycles 3 and 30
-                    st.info("Running dQ/dU analysis for cycles 3 and 30...")
-                    
-                    cycle_selections = [
-                        (3, 'charge'), (3, 'discharge'),
-                        (30, 'charge'), (30, 'discharge')
-                    ]
-                    
-                    dqdu_params = {
-                        'n_points': 333,
-                        'voltage_range': None,
-                        'smoothing': {
-                            'method': 'savitzky-golay',
-                            'window_size': 5
-                        },
-                        'peak_detection': True,
-                        'peak_prominence': 0.1,
-                        'use_common_voltage_range': True
-                    }
-                    
-                    dqdu_results = compute_dqdu_analysis(
-                        preprocessed_data.raw_data.data,
-                        cycle_selections,
-                        dqdu_params,
-                        cycle_boundaries=preprocessed_data.cycle_boundaries
-                    )
-                    
-                    # Create combined dQ/dU plot
-                    dqdu_plot = AnalysisSelectorComponent._create_dqdu_plot(dqdu_results)
-                    
-                    # Prepare combined results
-                    # Merge dQ/dU data
-                    dqdu_data_list = []
-                    peak_data_list = []
-                    
-                    for key, data in dqdu_results.items():
-                        if 'error' not in data:
-                            for v, dq in zip(data['voltage'], data['dq_du']):
-                                dqdu_data_list.append({
-                                    'Cycle': data['metadata']['cycle_number'],
-                                    'Phase': data['metadata']['half_cycle_type'],
-                                    'Voltage_V': v,
-                                    'dQ/dU': dq
-                                })
-                            
-                            if data.get('peaks') and data['peaks']['peak_indices']:
-                                for v, i, p in zip(
-                                    data['peaks']['peak_voltages'],
-                                    data['peaks']['peak_intensities'],
-                                    data['peaks']['prominences']
-                                ):
-                                    peak_data_list.append({
-                                        'Cycle': data['metadata']['cycle_number'],
-                                        'Phase': data['metadata']['half_cycle_type'],
-                                        'Peak_Voltage_V': v,
-                                        'Peak_Intensity': i,
-                                        'Prominence': p
-                                    })
-                    
-                    dqdu_df = pd.DataFrame(dqdu_data_list) if dqdu_data_list else None
-                    peak_df = pd.DataFrame(peak_data_list) if peak_data_list else None
-                    
-                    # Keep standard plots and add dQ/dU plot separately
-                    all_plots = standard_results.plots.copy() if standard_results.plots else {}
-                    all_plots['dqdu_plot'] = dqdu_plot  # Add dQ/dU plot with unique key
-                    
-                    # Create combined results
-                    combined_results = AnalysisResults(
-                        mode="combined",
-                        cycle_data=standard_results.cycle_data,
-                        summary_stats=standard_results.summary_stats,
-                        plots=all_plots,
-                        dqdu_data=dqdu_df,
-                        peak_data=peak_df,
-                        export_data=standard_results.cycle_data  # Use cycle data for export
-                    )
-                    
-                    # Store results
-                    st.session_state.analysis_results = combined_results
-                    st.session_state.analysis_mode = "combined"
-                    st.session_state.show_cycle_table = True
-                    
-                    st.success("Combined analysis complete!")
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Combined analysis failed: {str(e)}")
-                    logger.exception("Combined analysis error")
