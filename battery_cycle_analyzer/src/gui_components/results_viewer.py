@@ -19,7 +19,16 @@ class ResultsViewerComponent:
             return
         
         st.markdown("---")
-        st.header("📊 Analysis Results")
+        # Header with chart icon
+        st.markdown("""
+        <h2 style="display: flex; align-items: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+                <path d="M3 3v18h18"></path>
+                <polyline points="9 18 15 12 21 18"></polyline>
+            </svg>
+            Analysis Results
+        </h2>
+        """, unsafe_allow_html=True)
         
         if mode == "standard":
             ResultsViewerComponent._render_standard_results(results)
@@ -34,7 +43,7 @@ class ResultsViewerComponent:
         
         # Summary metrics
         if results.summary_stats:
-            st.subheader("📈 Summary Statistics")
+            st.subheader("Summary Statistics")
             
             col1, col2, col3, col4 = st.columns(4)
             
@@ -88,15 +97,15 @@ class ResultsViewerComponent:
         
         # Plots
         if results.plots:
-            st.subheader("📊 Visualizations")
+            st.subheader("Visualizations")
             
             # Create tabs for different plots
             plot_names = list(results.plots.keys())
             plot_labels = {
-                'capacity_vs_cycle': '📊 Capacity',
-                'retention_vs_cycle': '📈 Retention',
-                'efficiency_vs_cycle': '⚡ Efficiency',
-                'voltage_range_vs_cycle': '🔋 Voltage'
+                'capacity_vs_cycle': 'Capacity',
+                'retention_vs_cycle': 'Retention',
+                'efficiency_vs_cycle': 'Efficiency',
+                'voltage_range_vs_cycle': 'Voltage'
             }
             
             tabs = st.tabs([plot_labels.get(name, name) for name in plot_names])
@@ -109,7 +118,7 @@ class ResultsViewerComponent:
         # Cycle data table
         if st.session_state.get('show_cycle_table', True):
             if results.cycle_data is not None and not results.cycle_data.empty:
-                st.subheader("📋 Cycle Data Table")
+                st.subheader("Cycle Data Table")
                 
                 # Select columns to display
                 display_columns = [
@@ -169,7 +178,7 @@ class ResultsViewerComponent:
         
         # Peak detection results
         if results.peak_data is not None and not results.peak_data.empty:
-            st.subheader("🔍 Detected Peaks")
+            st.subheader("Detected Peaks")
             
             # Summary of peaks
             col1, col2, col3 = st.columns(3)
@@ -193,7 +202,7 @@ class ResultsViewerComponent:
         
         # dQ/dU data
         if results.dqdu_data is not None and not results.dqdu_data.empty:
-            with st.expander("📊 dQ/dU Data", expanded=False):
+            with st.expander("dQ/dU Data", expanded=False):
                 st.dataframe(
                     results.dqdu_data.round(3),
                     use_container_width=True,
@@ -205,7 +214,7 @@ class ResultsViewerComponent:
         """Display combined analysis results"""
         
         # Create tabs for different result types
-        tabs = st.tabs(["📊 All Plots", "📈 dQ/dU Data", "📋 Export Tables"])
+        tabs = st.tabs(["All Plots", "dQ/dU Data", "Export Tables"])
         
         with tabs[0]:
             # Display all plots including standard and dQ/dU
@@ -217,7 +226,7 @@ class ResultsViewerComponent:
         
         with tabs[2]:
             # Display combined data tables
-            st.subheader("📋 Combined Data Export")
+            st.subheader("Combined Data Export")
             
             if results.export_data is not None:
                 # Show cycle data
@@ -234,7 +243,7 @@ class ResultsViewerComponent:
                 with col1:
                     csv_cycle = results.export_data.to_csv(index=False)
                     st.download_button(
-                        label="📥 Download Cycle Data (CSV)",
+                        label="Download Cycle Data (CSV)",
                         data=csv_cycle,
                         file_name="combined_cycle_analysis.csv",
                         mime="text/csv"
@@ -244,7 +253,7 @@ class ResultsViewerComponent:
                     if results.dqdu_data is not None:
                         csv_dqdu = results.dqdu_data.to_csv(index=False)
                         st.download_button(
-                            label="📥 Download dQ/dU Data (CSV)",
+                            label="Download dQ/dU Data (CSV)",
                             data=csv_dqdu,
                             file_name="combined_dqdu_analysis.csv",
                             mime="text/csv"

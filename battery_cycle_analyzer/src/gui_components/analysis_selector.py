@@ -23,13 +23,23 @@ class AnalysisSelectorComponent:
     def render(preprocessed_data: PreprocessedData) -> None:
         """Render analysis mode selection and configuration"""
         
-        st.header("🔬 Analysis Mode")
+        # Header with chart icon
+        st.markdown("""
+        <h2 style="display: flex; align-items: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+                <line x1="12" y1="20" x2="12" y2="10"></line>
+                <line x1="18" y1="20" x2="18" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="16"></line>
+            </svg>
+            Analysis Mode
+        </h2>
+        """, unsafe_allow_html=True)
         
         # Create tabs for different analysis modes
         tabs = st.tabs([
-            "📊 Standard Cycle",
-            "📈 dQ/dU Analysis", 
-            "🔄 Combined"
+            "Standard Cycle",
+            "dQ/dU Analysis", 
+            "Combined"
         ])
         
         with tabs[0]:
@@ -49,7 +59,7 @@ class AnalysisSelectorComponent:
         st.write("Analyze capacity, retention, and efficiency trends over cycles")
         
         # Configuration
-        with st.expander("⚙️ Analysis Settings", expanded=True):
+        with st.expander("Analysis Settings", expanded=True):
             st.write("**Select plots to generate:**")
             
             col1, col2 = st.columns(2)
@@ -95,7 +105,7 @@ class AnalysisSelectorComponent:
         
         # Run button
         if st.button(
-            "▶️ Run Standard Analysis",
+            "Run Standard Analysis",
             type="primary",
             use_container_width=True,
             key="run_standard"
@@ -115,7 +125,7 @@ class AnalysisSelectorComponent:
                     st.session_state.analysis_mode = "standard"
                     st.session_state.show_cycle_table = show_table
                     
-                    st.success("✅ Standard analysis complete!")
+                    st.success("Standard analysis complete!")
                     st.rerun()
                     
                 except Exception as e:
@@ -132,11 +142,11 @@ class AnalysisSelectorComponent:
         # Get max cycles
         max_cycles = len(preprocessed_data.cycle_boundaries)
         
-        with st.expander("⚙️ dQ/dU Settings", expanded=True):
+        with st.expander("dQ/dU Settings", expanded=True):
             
             # Cycle selection with dynamic addition
             st.write("**Select Cycles for Analysis:**")
-            st.caption("💡 Tip: Skip cycles 1-2 if they contain SEI formation")
+            st.caption("Tip: Skip cycles 1-2 if they contain SEI formation")
             
             # Initialize session state for selected cycles if not exists
             if 'dqdu_selected_cycles' not in st.session_state:
@@ -162,7 +172,7 @@ class AnalysisSelectorComponent:
                 add_discharge = st.checkbox("Discharge", value=True, key="dq_add_discharge")
             
             with col4:
-                if st.button("➕ Add", key="dq_add_btn", type="secondary"):
+                if st.button("Add", key="dq_add_btn", type="secondary"):
                     if add_charge:
                         cycle_entry = {'cycle': new_cycle, 'phase': 'charge'}
                         if cycle_entry not in st.session_state.dqdu_selected_cycles:
@@ -272,7 +282,7 @@ class AnalysisSelectorComponent:
         
         # Run button
         if st.button(
-            "▶️ Run dQ/dU Analysis",
+            "Run dQ/dU Analysis",
             type="primary",
             use_container_width=True,
             key="run_dqdu"
@@ -356,7 +366,7 @@ class AnalysisSelectorComponent:
                         st.session_state.analysis_results = results
                         st.session_state.analysis_mode = "dqdu"
                         
-                        st.success("✅ dQ/dU analysis complete!")
+                        st.success("dQ/dU analysis complete!")
                         st.rerun()
                         
                     except Exception as e:
@@ -436,7 +446,7 @@ class AnalysisSelectorComponent:
         # Get max cycles for validation
         max_cycles = len(preprocessed_data.cycle_boundaries)
         
-        with st.expander("ℹ️ What will be analyzed", expanded=True):
+        with st.expander("What will be analyzed", expanded=True):
             col1, col2 = st.columns(2)
             
             with col1:
@@ -454,7 +464,7 @@ class AnalysisSelectorComponent:
                 st.write("- Peak detection enabled")
         
         if st.button(
-            "▶️ Run Combined Analysis",
+            "Run Combined Analysis",
             type="primary",
             use_container_width=True,
             key="run_combined"
@@ -567,7 +577,7 @@ class AnalysisSelectorComponent:
                     st.session_state.analysis_mode = "combined"
                     st.session_state.show_cycle_table = True
                     
-                    st.success("✅ Combined analysis complete!")
+                    st.success("Combined analysis complete!")
                     st.rerun()
                     
                 except Exception as e:

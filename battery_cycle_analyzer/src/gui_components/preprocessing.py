@@ -19,7 +19,16 @@ class PreprocessingComponent:
     def render_parameters() -> Optional[ProcessingParameters]:
         """Render preprocessing parameter configuration"""
         
-        st.header("⚙️ Analysis Parameters")
+        # Header with settings icon
+        st.markdown("""
+        <h2 style="display: flex; align-items: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"></path>
+            </svg>
+            Analysis Parameters
+        </h2>
+        """, unsafe_allow_html=True)
         
         # Active material weight
         active_material = st.number_input(
@@ -44,11 +53,11 @@ class PreprocessingComponent:
         )
         
         # C-rate configuration
-        st.subheader("🔋 C-Rate Configuration")
+        st.subheader("C-Rate Configuration")
         c_rates = PreprocessingComponent._render_crate_config()
         
         # Boundary detection
-        st.subheader("🔍 Boundary Detection")
+        st.subheader("Boundary Detection")
         boundary_method = st.selectbox(
             "Detection method",
             ["State-based", "Zero-crossing"],
@@ -80,7 +89,7 @@ class PreprocessingComponent:
         if 'test_plan_config' in st.session_state and st.session_state.test_plan_config:
             config = st.session_state.test_plan_config
             if config.c_rate_periods:
-                st.info("📋 Using C-rates from test plan. Uncheck to customize.")
+                st.info("Using C-rates from test plan. Uncheck to customize.")
                 
                 use_test_plan = st.checkbox("Use test plan C-rates", value=True, key="use_test_plan")
                 
@@ -114,11 +123,11 @@ class PreprocessingComponent:
             # Control buttons
             col1, col2, col3 = st.columns(3)
             with col1:
-                if st.button("➕ Add Period"):
+                if st.button("Add Period"):
                     st.session_state.c_rates.append((1, 30, 0.333, 0.333))
                     st.rerun()
             with col2:
-                if st.button("🔄 Reset"):
+                if st.button("Reset"):
                     st.session_state.c_rates = [(1, 1000, 0.333, 0.333)]
                     st.rerun()
             
@@ -166,7 +175,7 @@ class PreprocessingComponent:
                             key=f"cr_discharge_{i}"
                         )
                     
-                    if st.button(f"❌ Remove", key=f"cr_remove_{i}"):
+                    if st.button(f"Remove", key=f"cr_remove_{i}"):
                         # Skip this period
                         continue
                     
@@ -190,7 +199,7 @@ class PreprocessingComponent:
         ready = raw_data is not None and parameters is not None
         
         if st.button(
-            "🚀 Prepare Data",
+            "Prepare Data",
             type="primary",
             disabled=not ready,
             use_container_width=True,
@@ -207,12 +216,12 @@ class PreprocessingComponent:
                         
                         # Show success message
                         st.success(
-                            f"✅ Data prepared: {len(preprocessed.cycle_boundaries)} cycles detected"
+                            f"Data prepared: {len(preprocessed.cycle_boundaries)} cycles detected"
                         )
                         
                         # Show warnings if any
                         if preprocessed.validation_warnings:
-                            with st.expander("⚠️ Validation Warnings", expanded=True):
+                            with st.expander("Validation Warnings", expanded=True):
                                 for warning in preprocessed.validation_warnings:
                                     st.warning(warning)
                         
@@ -225,10 +234,10 @@ class PreprocessingComponent:
         
         # Show current status
         if st.session_state.get('preprocessed_data'):
-            st.success("✅ Data ready for analysis")
+            st.success("Data ready for analysis")
         elif raw_data:
-            st.info("ℹ️ Click 'Prepare Data' to continue")
+            st.info("Click 'Prepare Data' to continue")
         else:
-            st.info("ℹ️ Upload a file to begin")
+            st.info("Upload a file to begin")
         
         return st.session_state.get('preprocessed_data')

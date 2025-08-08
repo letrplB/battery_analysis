@@ -36,7 +36,17 @@ def render_sidebar():
     """Render sidebar with data input and preprocessing"""
     
     with st.sidebar:
-        st.title("📊 Data Preparation")
+        # Sidebar title with layers icon
+        st.markdown("""
+        <h2 style="display: flex; align-items: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                <polyline points="2 17 12 22 22 17"></polyline>
+                <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+            Data Preparation
+        </h2>
+        """, unsafe_allow_html=True)
         
         # Data input section
         raw_data = DataInputComponent.render()
@@ -57,24 +67,37 @@ def render_sidebar():
 def render_main_panel():
     """Render main panel with analysis and results"""
     
-    st.title("🔋 Battery Cycle Analyzer")
+    # Title with battery icon
+    st.markdown("""
+    <h1 style="display: flex; align-items: center;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+            <rect x="2" y="7" width="20" height="10" rx="2" ry="2"></rect>
+            <line x1="22" y1="11" x2="24" y2="11"></line>
+            <line x1="22" y1="13" x2="24" y2="13"></line>
+            <line x1="6" y1="11" x2="10" y2="11"></line>
+            <line x1="8" y1="9" x2="8" y2="13"></line>
+            <line x1="14" y1="11" x2="18" y2="11"></line>
+        </svg>
+        Battery Cycle Analyzer
+    </h1>
+    """, unsafe_allow_html=True)
     st.write("Advanced battery cycle analysis with modular processing pipeline")
     
     # Check if data is preprocessed
     if st.session_state.preprocessed_data is None:
         # Show welcome message
         st.info("""
-        ### 👋 Welcome to Battery Cycle Analyzer
+        ### Welcome to Battery Cycle Analyzer
         
         **Getting Started:**
-        1. 📁 Upload your battery test file in the sidebar
-        2. ⚙️ Configure analysis parameters
-        3. 🚀 Click "Prepare Data" to preprocess
-        4. 🔬 Select analysis mode and run analysis
+        1. Upload your battery test file in the sidebar
+        2. Configure analysis parameters
+        3. Click "Prepare Data" to preprocess
+        4. Select analysis mode and run analysis
         """)
         
         # Show sample workflow
-        with st.expander("📚 Sample Workflow", expanded=False):
+        with st.expander("Sample Workflow", expanded=False):
             st.markdown("""
             1. **Upload Data**: Select your Basytec .txt or .csv file
             2. **Set Parameters**: 
@@ -97,17 +120,17 @@ def render_main_panel():
     # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("📊 Total Cycles", len(prep_data.cycle_boundaries))
+        st.metric("Total Cycles", len(prep_data.cycle_boundaries))
     with col2:
         if prep_data.cycle_metadata is not None and not prep_data.cycle_metadata.empty:
             avg_cap = prep_data.cycle_metadata['Specific_Discharge_mAhg'].mean()
-            st.metric("⚡ Avg Capacity", f"{avg_cap:.1f} mAh/g")
+            st.metric("Avg Capacity", f"{avg_cap:.1f} mAh/g")
         else:
-            st.metric("⚡ Avg Capacity", "N/A")
+            st.metric("Avg Capacity", "N/A")
     with col3:
-        st.metric("📈 Data Points", f"{len(prep_data.raw_data.data):,}")
+        st.metric("Data Points", f"{len(prep_data.raw_data.data):,}")
     with col4:
-        st.metric("⚖️ Active Material", f"{prep_data.parameters.active_material_weight:.3f} g")
+        st.metric("Active Material", f"{prep_data.parameters.active_material_weight:.3f} g")
     
     st.markdown("---")
     
@@ -135,7 +158,7 @@ def main():
     # Page configuration
     st.set_page_config(
         page_title="Battery Cycle Analyzer",
-        page_icon="🔋",
+        page_icon=None,
         layout="wide",
         initial_sidebar_state="expanded"
     )
