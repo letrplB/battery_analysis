@@ -38,15 +38,15 @@ class TestPlanConfig:
 class TestPlanParser:
     """Parses test plan files to extract configuration"""
     
-    # Common patterns in test plan files
-    CHARGE_PATTERN = re.compile(r'Charge.*?I=([0-9.]+)CA', re.IGNORECASE)
-    DISCHARGE_PATTERN = re.compile(r'Discharge.*?I=([0-9.]+)CA', re.IGNORECASE)
+    # Common patterns in test plan files (support both . and , for decimals)
+    CHARGE_PATTERN = re.compile(r'Charge.*?I=([0-9.,]+)CA', re.IGNORECASE)
+    DISCHARGE_PATTERN = re.compile(r'Discharge.*?I=([0-9.,]+)CA', re.IGNORECASE)
     CYCLE_COUNT_PATTERN = re.compile(r'Cycle-?end.*?Count=([0-9]+)', re.IGNORECASE)
     CYCLE_PATTERN = re.compile(r'Cycle.*?Count=([0-9]+)', re.IGNORECASE)
     
     # Alternative patterns for different formats
-    CHARGE_ALT_PATTERN = re.compile(r'CC.*?charge.*?([0-9.]+)\s*C', re.IGNORECASE)
-    DISCHARGE_ALT_PATTERN = re.compile(r'CC.*?discharge.*?([0-9.]+)\s*C', re.IGNORECASE)
+    CHARGE_ALT_PATTERN = re.compile(r'CC.*?charge.*?([0-9.,]+)\s*C', re.IGNORECASE)
+    DISCHARGE_ALT_PATTERN = re.compile(r'CC.*?discharge.*?([0-9.,]+)\s*C', re.IGNORECASE)
     
     @staticmethod
     def parse(file_content: str) -> TestPlanConfig:
@@ -116,7 +116,9 @@ class TestPlanParser:
             
             if charge_match:
                 try:
-                    charge_rate = float(charge_match.group(1))
+                    # Handle both comma and dot decimals
+                    rate_str = charge_match.group(1).replace(',', '.')
+                    charge_rate = float(rate_str)
                     in_cycle_block = True
                 except (ValueError, IndexError):
                     logger.warning(f"Could not parse charge rate from: {line}")
@@ -128,7 +130,9 @@ class TestPlanParser:
             
             if discharge_match:
                 try:
-                    discharge_rate = float(discharge_match.group(1))
+                    # Handle both comma and dot decimals
+                    rate_str = discharge_match.group(1).replace(',', '.')
+                    discharge_rate = float(rate_str)
                     in_cycle_block = True
                 except (ValueError, IndexError):
                     logger.warning(f"Could not parse discharge rate from: {line}")

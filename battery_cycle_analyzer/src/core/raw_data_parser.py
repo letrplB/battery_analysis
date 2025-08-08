@@ -10,6 +10,9 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 import logging
+from io import StringIO
+
+from .data_cleaner import DataCleaner, DeviceType, DecimalSeparator
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +32,50 @@ class RawDataParser:
                        'Ah-Step', 'Wh[Wh]', 'T1[°C]', 'T2[°C]',
                        'State', 'Cyc', 'DataSet']
     
-    @staticmethod
+    def __init__(self, device_type: DeviceType = DeviceType.BASYTEC):
+        """Initialize parser with device type"""
+        self.device_type = device_type
+        self.data_cleaner = DataCleaner(device_type)
+    
+    def parse_data_from_content(
+        self,
+        content: str,
+        skip_rows: int,
+        column_header: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Parse data from cleaned content
+        
+        Args:
+            content: Cleaned file content
+            skip_rows: Number of header rows to skip
+            column_header: Optional pre-parsed column header line
+            
+        Returns:
+            DataFrame with parsed data
+        """
+        lines = content.split('\n')
+        
+        # Find or use the header line
+        header_line = self._find_header_line(lines, skip_rows, column_header)
+        
+        if header_line:
+            # Use custom parser for complex formats
+            df = self._parse_with_header(lines, header_line, skip_rows)
+        else:
+            # Fallback to pandas parsing from string
+            # Skip header lines and create StringIO for pandas
+            data_lines = '\n'.join(lines[skip_rows:])
+            df = pd.read_csv(StringIO(data_lines), sep='\t', engine='python')
+        
+        # Note: Decimal separators already fixed in clean_raw_text
+        # Just need to convert data types
+        df = self._convert_numeric_columns_simple(df)
+        
+        return df
+    
     def parse_data_section(
+        self,
         file_path: Path, 
         encoding: str, 
         skip_rows: int,
@@ -53,14 +98,19 @@ class RawDataParser:
             lines = f.readlines()
         
         # Find or use the header line
-        header_line = RawDataParser._find_header_line(lines, skip_rows, column_header)
+        header_line = self._find_header_line(lines, skip_rows, column_header)
         
         if header_line:
             # Use custom parser for complex formats
-            return RawDataParser._parse_with_header(lines, header_line, skip_rows)
+            df = self._parse_with_header(lines, header_line, skip_rows)
         else:
             # Fallback to standard pandas parsing
-            return RawDataParser._parse_with_pandas(file_path, encoding, skip_rows)
+            df = self._parse_with_pandas(file_path, encoding, skip_rows)
+        
+        # Apply data cleaning
+        df = self.data_cleaner.clean_data(df)
+        
+        return df
     
     @staticmethod
     def _find_header_line(
@@ -214,16 +264,12 @@ class RawDataParser:
             if not line.strip() or line.startswith('~'):
                 continue
             
-            # Replace comma decimal separators with dots BEFORE splitting
-            # This handles European number format (e.g., "0,123" -> "0.123")
-            line_normalized = line.replace(',', '.')
-            
             # Try tab-separated first
-            parts = line_normalized.strip().split('\t')
+            parts = line.strip().split('\t')
             
             if len(parts) != len(columns):
                 # Try space-separated with DateTime handling
-                parts = line_normalized.strip().split()
+                parts = line.strip().split()
                 
                 # Handle DateTime field that contains space
                 if datetime_idx is not None and len(parts) > len(columns):
@@ -329,6 +375,22 @@ class RawDataParser:
         
         raise ValueError("Could not parse data with any delimiter")
     
+    def _convert_numeric_columns_simple(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert string columns to numeric (decimals already fixed in cleaning)
+        
+        Args:
+            df: DataFrame to convert
+            
+        Returns:
+            DataFrame with numeric columns converted
+        """
+        for col in self.NUMERIC_COLUMNS:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        return df
+    
     @staticmethod
     def _convert_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -342,6 +404,10 @@ class RawDataParser:
         """
         for col in RawDataParser.NUMERIC_COLUMNS:
             if col in df.columns:
+                # First replace comma decimal separators with dots (European format)
+                # This is critical for Basytec data!
+                if df[col].dtype == object:  # Only for string columns
+                    df[col] = df[col].astype(str).str.replace(',', '.')
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
         return df

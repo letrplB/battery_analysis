@@ -10,6 +10,8 @@ from core.data_models import (
 from analysis_modes.standard_cycle import StandardCycleAnalyzer
 
 from analysis_modes.dqdu_analysis import compute_dqdu_analysis
+import plotly.graph_objects as go
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -132,51 +134,66 @@ class AnalysisSelectorComponent:
         
         with st.expander("⚙️ dQ/dU Settings", expanded=True):
             
-            # Cycle selection
+            # Cycle selection with dynamic addition
             st.write("**Select Cycles for Analysis:**")
+            st.caption("💡 Tip: Skip cycles 1-2 if they contain SEI formation")
             
-            col1, col2, col3 = st.columns(3)
+            # Initialize session state for selected cycles if not exists
+            if 'dqdu_selected_cycles' not in st.session_state:
+                st.session_state.dqdu_selected_cycles = []
             
-            selected_cycles = []
+            # Add cycle interface
+            st.write("**Add cycles to analyze:**")
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
             
             with col1:
-                st.write("**Cycle 1**")
-                c1_charge = st.checkbox("Charge", value=True, key="dq_c1_ch")
-                c1_discharge = st.checkbox("Discharge", value=False, key="dq_c1_dis")
-                if c1_charge:
-                    selected_cycles.append({'cycle': 1, 'phase': 'charge'})
-                if c1_discharge:
-                    selected_cycles.append({'cycle': 1, 'phase': 'discharge'})
+                new_cycle = st.number_input(
+                    "Cycle number",
+                    min_value=1,
+                    max_value=max_cycles,
+                    value=3,  # Default to cycle 3 (after SEI)
+                    key="dq_new_cycle"
+                )
             
             with col2:
-                cycle_2 = st.number_input(
-                    "**Cycle 2**",
-                    min_value=2,
-                    max_value=max_cycles,
-                    value=min(2, max_cycles),
-                    key="dq_cycle_2"
-                )
-                c2_charge = st.checkbox("Charge", value=False, key="dq_c2_ch")
-                c2_discharge = st.checkbox("Discharge", value=True, key="dq_c2_dis")
-                if c2_charge:
-                    selected_cycles.append({'cycle': cycle_2, 'phase': 'charge'})
-                if c2_discharge:
-                    selected_cycles.append({'cycle': cycle_2, 'phase': 'discharge'})
+                add_charge = st.checkbox("Charge", value=True, key="dq_add_charge")
             
             with col3:
-                cycle_3 = st.number_input(
-                    "**Cycle 3**",
-                    min_value=3,
-                    max_value=max_cycles,
-                    value=min(3, max_cycles),
-                    key="dq_cycle_3"
-                )
-                c3_charge = st.checkbox("Charge", value=False, key="dq_c3_ch")
-                c3_discharge = st.checkbox("Discharge", value=False, key="dq_c3_dis")
-                if c3_charge:
-                    selected_cycles.append({'cycle': cycle_3, 'phase': 'charge'})
-                if c3_discharge:
-                    selected_cycles.append({'cycle': cycle_3, 'phase': 'discharge'})
+                add_discharge = st.checkbox("Discharge", value=True, key="dq_add_discharge")
+            
+            with col4:
+                if st.button("➕ Add", key="dq_add_btn", type="secondary"):
+                    if add_charge:
+                        cycle_entry = {'cycle': new_cycle, 'phase': 'charge'}
+                        if cycle_entry not in st.session_state.dqdu_selected_cycles:
+                            st.session_state.dqdu_selected_cycles.append(cycle_entry)
+                    if add_discharge:
+                        cycle_entry = {'cycle': new_cycle, 'phase': 'discharge'}
+                        if cycle_entry not in st.session_state.dqdu_selected_cycles:
+                            st.session_state.dqdu_selected_cycles.append(cycle_entry)
+                    st.rerun()
+            
+            # Display selected cycles
+            if st.session_state.dqdu_selected_cycles:
+                st.write("**Selected cycles:**")
+                
+                # Sort and display selected cycles
+                sorted_cycles = sorted(st.session_state.dqdu_selected_cycles, 
+                                     key=lambda x: (x['cycle'], x['phase']))
+                
+                # Display in a clean format
+                for idx, cycle_info in enumerate(sorted_cycles):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.write(f"• Cycle {cycle_info['cycle']} - {cycle_info['phase'].capitalize()}")
+                    with col2:
+                        if st.button("Remove", key=f"remove_dq_{idx}", type="secondary"):
+                            st.session_state.dqdu_selected_cycles.remove(cycle_info)
+                            st.rerun()
+            else:
+                st.info("No cycles selected yet. Add cycles using the form above.")
+            
+            selected_cycles = st.session_state.dqdu_selected_cycles
             
             st.markdown("---")
             
@@ -265,27 +282,74 @@ class AnalysisSelectorComponent:
             else:
                 with st.spinner("Running dQ/dU analysis..."):
                     try:
+                        # Prepare cycle selections (list of tuples)
+                        cycle_selections = [
+                            (cycle['cycle'], cycle['phase']) 
+                            for cycle in selected_cycles
+                        ]
+                        
+                        # Prepare parameters dictionary
+                        params = {
+                            'n_points': interp_points,
+                            'voltage_range': voltage_range if use_voltage_filter else None,
+                            'smoothing': {
+                                'method': smoothing_method.lower(),
+                                'window_size': window_size
+                            },
+                            'peak_detection': enable_peaks,
+                            'peak_prominence': peak_prominence
+                        }
+                        
                         # Run analysis
                         dqdu_results = compute_dqdu_analysis(
                             preprocessed_data.raw_data.data,
-                            selected_cycles,
-                            preprocessed_data.parameters.active_material_weight,
-                            voltage_filter=use_voltage_filter,
-                            voltage_range=voltage_range,
-                            smoothing_method=smoothing_method.lower().replace(' ', '_'),
-                            smoothing_window=window_size,
-                            peak_detection=enable_peaks,
-                            peak_prominence=peak_prominence,
-                            interpolation_points=interp_points
+                            cycle_selections,
+                            params
                         )
+                        
+                        # Create plot from results
+                        dqdu_plot = AnalysisSelectorComponent._create_dqdu_plot(dqdu_results)
+                        
+                        # Prepare data for export
+                        dqdu_data_list = []
+                        peak_data_list = []
+                        
+                        for key, data in dqdu_results.items():
+                            if 'error' not in data:
+                                # Add dQ/dU data
+                                for v, dq in zip(data['voltage'], data['dq_du']):
+                                    dqdu_data_list.append({
+                                        'Cycle': data['metadata']['cycle_number'],
+                                        'Phase': data['metadata']['half_cycle_type'],
+                                        'Voltage_V': v,
+                                        'dQ/dU': dq
+                                    })
+                                
+                                # Add peak data if available
+                                if data.get('peaks') and data['peaks']['peak_indices']:
+                                    for v, i, p in zip(
+                                        data['peaks']['peak_voltages'],
+                                        data['peaks']['peak_intensities'],
+                                        data['peaks']['prominences']
+                                    ):
+                                        peak_data_list.append({
+                                            'Cycle': data['metadata']['cycle_number'],
+                                            'Phase': data['metadata']['half_cycle_type'],
+                                            'Peak_Voltage_V': v,
+                                            'Peak_Intensity': i,
+                                            'Prominence': p
+                                        })
+                        
+                        dqdu_df = pd.DataFrame(dqdu_data_list) if dqdu_data_list else None
+                        peak_df = pd.DataFrame(peak_data_list) if peak_data_list else None
                         
                         # Create results object
                         results = AnalysisResults(
                             mode="dqdu",
-                            dqdu_data=dqdu_results.get('dqdu_data'),
-                            peak_data=dqdu_results.get('peak_data'),
-                            plots={'dqdu_plot': dqdu_results.get('plot')},
-                            export_data=dqdu_results.get('export_data')
+                            dqdu_data=dqdu_df,
+                            peak_data=peak_df,
+                            plots={'dqdu_plot': dqdu_plot},
+                            export_data=dqdu_df
                         )
                         
                         st.session_state.analysis_results = results
@@ -297,6 +361,66 @@ class AnalysisSelectorComponent:
                     except Exception as e:
                         st.error(f"dQ/dU analysis failed: {str(e)}")
                         logger.exception("dQ/dU analysis error")
+    
+    @staticmethod
+    def _create_dqdu_plot(dqdu_results: Dict) -> go.Figure:
+        """Create plotly figure from dQ/dU results"""
+        
+        fig = go.Figure()
+        
+        # Color palette for different cycles
+        colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
+        color_idx = 0
+        
+        for key, data in dqdu_results.items():
+            if 'error' not in data:
+                cycle_num = data['metadata']['cycle_number']
+                phase = data['metadata']['half_cycle_type']
+                color = colors[color_idx % len(colors)]
+                
+                # Add main dQ/dU trace
+                fig.add_trace(go.Scatter(
+                    x=data['voltage'],
+                    y=data['dq_du'],
+                    mode='lines',
+                    name=f"Cycle {cycle_num} ({phase})",
+                    line=dict(color=color, width=2)
+                ))
+                
+                # Add peaks if available
+                if data.get('peaks') and data['peaks']['peak_indices']:
+                    fig.add_trace(go.Scatter(
+                        x=data['peaks']['peak_voltages'],
+                        y=data['peaks']['peak_intensities'],
+                        mode='markers',
+                        name=f"Peaks C{cycle_num}",
+                        marker=dict(
+                            color=color,
+                            size=10,
+                            symbol='diamond',
+                            line=dict(color='white', width=1)
+                        ),
+                        showlegend=False
+                    ))
+                
+                color_idx += 1
+        
+        # Update layout
+        fig.update_layout(
+            title="Differential Capacity (dQ/dU) Analysis",
+            xaxis_title="Voltage (V)",
+            yaxis_title="dQ/dU (mAh/V)",
+            hovermode='x unified',
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            ),
+            template="plotly_white"
+        )
+        
+        return fig
     
     @staticmethod
     def _render_combined_analysis(preprocessed_data: PreprocessedData) -> None:

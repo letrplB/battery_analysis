@@ -74,11 +74,16 @@ class DataPreprocessor:
         
         # Filter to only charge and discharge commands (remove pause, etc.)
         if command_col in df.columns:
+            # Debug: Check what values are in the Command column
+            unique_commands = df[command_col].unique()
+            self.logger.info(f"Unique commands in data: {unique_commands[:10]}")
+            
             df_filtered = df[df[command_col].str.lower().isin(['charge', 'discharge'])].copy()
             if len(df_filtered) == 0:
-                self.logger.warning("No charge/discharge data found after filtering")
+                self.logger.warning(f"No charge/discharge data found after filtering. Command column '{command_col}' has values: {unique_commands[:10]}")
                 return []
         else:
+            self.logger.warning(f"Command column '{command_col}' not found in data columns: {df.columns.tolist()}")
             df_filtered = df
         
         if method == "State-based" and has_state:
@@ -225,12 +230,12 @@ class DataPreprocessor:
             if len(discharge_df) > 1:
                 time_h = discharge_df[time_col].values
                 current_a = np.abs(discharge_df[current_col].values)
-                discharge_capacity = integrate.trapz(current_a, time_h)
+                discharge_capacity = np.trapz(current_a, time_h)
             
             if len(charge_df) > 1:
                 time_h = charge_df[time_col].values
                 current_a = np.abs(charge_df[current_col].values)  # Use absolute value for charge too
-                charge_capacity = integrate.trapz(current_a, time_h)
+                charge_capacity = np.trapz(current_a, time_h)
             
             # Calculate specific capacity
             specific_discharge = (discharge_capacity * 1000) / parameters.active_material_weight
