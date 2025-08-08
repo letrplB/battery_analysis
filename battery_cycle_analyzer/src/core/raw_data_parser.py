@@ -154,11 +154,20 @@ class RawDataParser:
             # Try space-separated
             columns = header_line.split()
         
-        # Clean column names
-        columns = [col.strip() for col in columns if col.strip()]
+        # Clean column names and fix encoding issues
+        cleaned_columns = []
+        for col in columns:
+            col = col.strip()
+            if col:
+                # Fix temperature column with special character
+                if 'T1[' in col and 'C]' in col:
+                    col = 'T1[°C]'
+                elif 'T2[' in col and 'C]' in col:
+                    col = 'T2[°C]'
+                cleaned_columns.append(col)
         
-        logger.debug(f"Parsed {len(columns)} columns from header")
-        return columns
+        logger.debug(f"Parsed {len(cleaned_columns)} columns from header")
+        return cleaned_columns
     
     @staticmethod
     def _find_data_start(lines: List[str], skip_rows: int) -> int:
@@ -205,12 +214,16 @@ class RawDataParser:
             if not line.strip() or line.startswith('~'):
                 continue
             
+            # Replace comma decimal separators with dots BEFORE splitting
+            # This handles European number format (e.g., "0,123" -> "0.123")
+            line_normalized = line.replace(',', '.')
+            
             # Try tab-separated first
-            parts = line.strip().split('\t')
+            parts = line_normalized.strip().split('\t')
             
             if len(parts) != len(columns):
                 # Try space-separated with DateTime handling
-                parts = line.strip().split()
+                parts = line_normalized.strip().split()
                 
                 # Handle DateTime field that contains space
                 if datetime_idx is not None and len(parts) > len(columns):
@@ -282,13 +295,17 @@ class RawDataParser:
             DataFrame with parsed data
         """
         # Try different delimiters
-        for delimiter in ['\t', ' ', ',', ';']:
+        for delimiter in ['\t', ' ', ';']:
             try:
+                # For European format with comma decimals
+                decimal = ',' if delimiter != ',' else '.'
+                
                 df = pd.read_csv(
                     file_path,
                     sep=delimiter,
                     skiprows=skip_rows,
                     encoding=encoding,
+                    decimal=decimal,  # Handle comma as decimal separator
                     on_bad_lines='skip',
                     engine='python'
                 )
