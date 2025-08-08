@@ -24,23 +24,47 @@ def extract_cycle_data(df: pd.DataFrame, cycle_number: int, half_cycle_type: str
     Returns:
         DataFrame with the extracted cycle data
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Log available columns for debugging
+    logger.info(f"Available columns in dataframe: {df.columns.tolist()}")
+    
     # Filter to charge/discharge commands only
     df_filtered = df[df['Command'].str.lower().isin(['charge', 'discharge'])].copy()
     
-    # Detect cycles
-    is_charge = df_filtered['Command'].str.lower() == 'charge'
-    is_discharge = df_filtered['Command'].str.lower() == 'discharge'
+    # Detect cycles - use proper pairing of charge/discharge
+    command = df_filtered['Command'].str.lower()
     
-    # Find starts of cycles
-    charge_prev = is_charge.shift(1, fill_value=False)
-    charge_starts = is_charge & (~charge_prev)
+    # Track command changes
+    command_changes = command != command.shift(1)
     
-    discharge_prev = is_discharge.shift(1, fill_value=False)
-    discharge_starts = is_discharge & (~discharge_prev)
+    # Initialize cycle counter
+    cycle_num = 0
+    cycle_numbers = []
+    current_phase = None
     
-    # Assign cycle numbers
-    cycle_starts = charge_starts | discharge_starts
-    df_filtered['CycleNumber'] = cycle_starts.cumsum()
+    for i, (cmd, change) in enumerate(zip(command, command_changes)):
+        if change:  # Command changed
+            if current_phase == 'discharge' and cmd == 'charge':
+                # Discharge -> Charge: same cycle
+                pass
+            elif current_phase == 'charge' and cmd == 'discharge':
+                # Charge -> Discharge: new cycle
+                cycle_num += 1
+            elif current_phase is None:
+                # First command
+                cycle_num = 1
+            else:
+                # Other transitions
+                cycle_num += 1
+            current_phase = cmd
+        cycle_numbers.append(cycle_num)
+    
+    df_filtered['CycleNumber'] = cycle_numbers
+    
+    # Log what we found
+    logger.info(f"Total cycles found: {df_filtered['CycleNumber'].max()}")
     
     # Filter to the specific cycle and type
     cycle_data = df_filtered[
@@ -49,6 +73,9 @@ def extract_cycle_data(df: pd.DataFrame, cycle_number: int, half_cycle_type: str
     ].copy()
     
     if cycle_data.empty:
+        logger.warning(f"No data found for cycle {cycle_number} ({half_cycle_type})")
+        logger.warning(f"Available cycle numbers: {sorted(df_filtered['CycleNumber'].unique())[:20]}")
+        logger.warning(f"Commands in filtered data: {df_filtered['Command'].unique()}")
         raise ValueError(f"No data found for cycle {cycle_number} ({half_cycle_type})")
     
     return cycle_data
@@ -67,12 +94,26 @@ def interpolate_voltage_capacity(voltage: np.ndarray, capacity: np.ndarray,
     Returns:
         Tuple of (interpolated_voltage, interpolated_capacity)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Ensure arrays are numeric (convert from object dtype if needed)
+    try:
+        voltage = np.asarray(voltage, dtype=np.float64)
+        capacity = np.asarray(capacity, dtype=np.float64)
+    except (ValueError, TypeError) as e:
+        logger.error(f"Could not convert to numeric - V dtype: {voltage.dtype}, C dtype: {capacity.dtype}")
+        logger.error(f"Sample voltage values: {voltage[:5] if len(voltage) > 0 else 'empty'}")
+        logger.error(f"Sample capacity values: {capacity[:5] if len(capacity) > 0 else 'empty'}")
+        raise ValueError(f"Could not convert data to numeric: {e}")
+    
     # Remove any NaN values
     mask = ~(np.isnan(voltage) | np.isnan(capacity))
     voltage = voltage[mask]
     capacity = capacity[mask]
     
     if len(voltage) < 2:
+        logger.error(f"Insufficient data points for interpolation: {len(voltage)}")
         raise ValueError("Insufficient data points for interpolation")
     
     # Sort by voltage for interpolation
@@ -86,15 +127,20 @@ def interpolate_voltage_capacity(voltage: np.ndarray, capacity: np.ndarray,
     capacity_unique = capacity_sorted[unique_mask]
     
     if len(voltage_unique) < 2:
+        logger.error(f"Insufficient unique voltage points: {len(voltage_unique)}")
         raise ValueError("Insufficient unique voltage points for interpolation")
     
     # Create uniform voltage grid
     v_min, v_max = voltage_unique.min(), voltage_unique.max()
     v_interp = np.linspace(v_min, v_max, n_points)
     
-    # Interpolate capacity
+    logger.info(f"Interpolating: {len(voltage_unique)} unique points to {n_points} points")
+    logger.info(f"Voltage range: {v_min:.3f} to {v_max:.3f} V")
+    logger.info(f"Capacity range: {capacity_unique.min():.6f} to {capacity_unique.max():.6f} Ah")
+    
+    # Interpolate capacity - use linear for stability
     interp_func = interpolate.interp1d(voltage_unique, capacity_unique, 
-                                       kind='cubic', bounds_error=False, 
+                                       kind='linear', bounds_error=False, 
                                        fill_value='extrapolate')
     q_interp = interp_func(v_interp)
     
@@ -108,28 +154,37 @@ def calculate_dq_du(voltage: np.ndarray, capacity: np.ndarray,
     
     Args:
         voltage: Voltage data (should be uniformly spaced)
-        capacity: Capacity data
+        capacity: Capacity data (in Ah)
         smoothing: Optional smoothing parameters
         
     Returns:
-        dQ/dU values array
+        dQ/dU values array (in mAh/V)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Convert capacity to mAh first for better numerical stability with small batteries
+    capacity_mah = capacity * 1000  # Convert Ah to mAh
+    
+    logger.info(f"Capacity range for dQ/dU: {capacity_mah.min():.3f} to {capacity_mah.max():.3f} mAh")
+    
     # Apply smoothing to capacity before differentiation if requested
     if smoothing:
-        capacity = apply_smoothing(capacity, smoothing)
+        capacity_mah = apply_smoothing(capacity_mah, smoothing)
     
     # Calculate numerical derivative dQ/dV
     dv = np.gradient(voltage)
-    dq = np.gradient(capacity)
+    dq = np.gradient(capacity_mah)  # Already in mAh
     
-    # Avoid division by zero
-    dv[np.abs(dv) < 1e-10] = 1e-10
+    # Avoid division by zero - use a larger threshold for voltage differences
+    dv[np.abs(dv) < 1e-6] = 1e-6
     
-    # Calculate dQ/dU (differential capacity)
+    # Calculate dQ/dU (differential capacity) - already in mAh/V
     dq_du = dq / dv
     
-    # Convert from Ah/V to mAh/V for better scaling
-    dq_du = dq_du * 1000
+    # Check for reasonable values
+    if np.all(np.abs(dq_du) < 1e-6):
+        logger.warning("All dQ/dU values are near zero - check capacity data")
     
     return dq_du
 
@@ -147,10 +202,13 @@ def apply_smoothing(data: np.ndarray, params: Dict) -> np.ndarray:
     Returns:
         Smoothed data array
     """
+    if not params or params.get('method') == 'none':
+        return data
+        
     method = params.get('method', 'savgol')
     
-    if method == 'savgol':
-        window = params.get('window', 11)
+    if method == 'savgol' or method == 'savitzky_golay':
+        window = params.get('window_size', params.get('window', 11))
         poly = params.get('poly', 3)
         # Ensure window is odd
         if window % 2 == 0:
@@ -240,16 +298,39 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
             # Get voltage and capacity data
             voltage = cycle_data['U[V]'].values
             
-            # Use appropriate capacity column based on cycle type
-            if half_cycle_type.lower() == 'discharge':
-                capacity_col = 'Ah-Cyc-Discharge-0'
-            else:
-                capacity_col = 'Ah-Cyc-Charge-0'
+            # Try different capacity column names - prioritize absolute capacity
+            capacity_cols = {
+                'discharge': ['Ah[Ah]', 'Ah-Cyc-Discharge-0', 'Ah-Cyc-Discharge'],
+                'charge': ['Ah[Ah]', 'Ah-Cyc-Charge-0', 'Ah-Cyc-Charge']
+            }
             
-            if capacity_col in cycle_data.columns:
-                capacity = cycle_data[capacity_col].values
-            else:
+            capacity = None
+            for col in capacity_cols[half_cycle_type.lower()]:
+                if col in cycle_data.columns:
+                    raw_capacity = cycle_data[col].values
+                    
+                    # For absolute capacity column, calculate relative capacity within cycle
+                    if col == 'Ah[Ah]':
+                        # Use absolute values and reset to start from 0
+                        capacity = np.abs(raw_capacity - raw_capacity[0])
+                        logging.info(f"Using absolute capacity column {col}, range: {raw_capacity[0]:.6f} to {raw_capacity[-1]:.6f}")
+                    else:
+                        # Cycle-specific columns should already be relative
+                        capacity = np.abs(raw_capacity)
+                        logging.info(f"Using cycle capacity column {col}, max: {capacity.max():.6f}")
+                    
+                    # Check if we have reasonable capacity values (for small batteries)
+                    # For 50 mAh/g with 0.035g = 1.75 mAh = 0.00175 Ah theoretical
+                    if capacity.max() < 1e-7:  # Less than 0.0001 mAh - truly too small
+                        logging.warning(f"Very small capacity values in {col}: max={capacity.max():.9f} Ah")
+                        continue  # Try next column
+                    
+                    logging.info(f"Selected capacity column: {col}")
+                    break
+            
+            if capacity is None:
                 # Fallback: integrate current over time
+                logging.info("No capacity column found, integrating current over time")
                 time_h = cycle_data['Time[h]'].values
                 current = np.abs(cycle_data['I[A]'].values)
                 capacity = np.cumsum(current * np.gradient(time_h))
@@ -267,9 +348,33 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
                 n_points=params.get('n_points', 333)
             )
             
+            # Log data ranges for debugging
+            try:
+                v_min = float(voltage.min())
+                v_max = float(voltage.max())
+                c_min = float(capacity.min())
+                c_max = float(capacity.max())
+                logging.info(f"Cycle {cycle_num} ({half_cycle_type}): "
+                            f"V range: {v_min:.2f}-{v_max:.2f} V, "
+                            f"Q range: {c_min:.6f}-{c_max:.6f} Ah, "
+                            f"Points: {len(voltage)}")
+            except (ValueError, TypeError) as e:
+                logging.error(f"Data type issue - V dtype: {voltage.dtype}, C dtype: {capacity.dtype}")
+                logging.error(f"Sample values - V: {voltage[:3]}, C: {capacity[:3]}")
+            
             # Calculate dQ/dU
             smoothing = params.get('smoothing')
-            dq_du = calculate_dq_du(v_interp, q_interp, smoothing)
+            # Only pass smoothing if it's not None/none
+            if smoothing and smoothing.get('method', 'none').lower() != 'none':
+                dq_du = calculate_dq_du(v_interp, q_interp, smoothing)
+            else:
+                dq_du = calculate_dq_du(v_interp, q_interp, None)
+            
+            # Check if dQ/dU has valid values
+            if np.all(np.isnan(dq_du)) or len(dq_du) == 0:
+                logging.warning(f"All dQ/dU values are NaN for cycle {cycle_num}")
+            else:
+                logging.info(f"dQ/dU range: {np.nanmin(dq_du):.4f} to {np.nanmax(dq_du):.4f}")
             
             # Detect peaks if enabled
             peaks = None

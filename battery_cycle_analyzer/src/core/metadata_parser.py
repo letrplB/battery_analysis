@@ -8,6 +8,7 @@ Handles various metadata formats and encoding issues.
 from typing import Dict, Tuple, Optional
 from pathlib import Path
 import logging
+import os
 
 from .data_models import FileMetadata
 
@@ -29,6 +30,66 @@ class MetadataParser:
         'Operator (Data converting)': 'operator_converting',
         'Testplan': 'test_plan'
     }
+    
+    @staticmethod
+    def parse_header_from_content(
+        content: str,
+        file_name: str = "unknown.txt",
+        file_size_kb: float = 0
+    ) -> Tuple[FileMetadata, int, Optional[str]]:
+        """
+        Parse metadata from cleaned file content
+        
+        Args:
+            content: Cleaned file content
+            file_name: Original file name
+            file_size_kb: File size in KB
+            
+        Returns:
+            Tuple of (metadata, header_lines_count, column_header_line)
+        """
+        lines = content.split('\n')
+        
+        metadata = FileMetadata(
+            file_name=file_name,
+            file_size_kb=file_size_kb,
+            total_lines=len(lines)
+        )
+        
+        header_lines = 0
+        column_header = None
+        
+        # Parse header lines (lines starting with ~)
+        for i, line in enumerate(lines):
+            if not line.startswith('~'):
+                break
+            
+            header_lines += 1
+            
+            # Skip empty metadata lines
+            if line.strip() == '~':
+                continue
+            
+            # Check for column header
+            if 'Time[h]' in line or 'DataSet' in line:
+                column_header = line.strip('~').strip()
+                continue
+            
+            # Parse metadata key-value pairs
+            if ':' in line:
+                key_value = line[1:].strip()  # Remove ~ prefix
+                if ':' in key_value:
+                    key, value = key_value.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    # Map to metadata fields
+                    if key in MetadataParser.METADATA_MAPPINGS:
+                        field = MetadataParser.METADATA_MAPPINGS[key]
+                        setattr(metadata, field, value)
+        
+        logger.info(f"Parsed {header_lines} header lines from content")
+        return metadata, header_lines, column_header
     
     @staticmethod
     def parse_header(

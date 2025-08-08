@@ -6,6 +6,7 @@ import logging
 from core.data_loader import DataLoader
 from core.data_models import RawBatteryData
 from core.test_plan_parser import TestPlanParser, TestPlanConfig
+from core.data_cleaner import DeviceType
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,25 @@ class DataInputComponent:
         
         st.header("📁 Data Input")
         
+        # Device type selection
+        device_type = st.selectbox(
+            "Battery Tester Device",
+            options=[
+                DeviceType.BASYTEC,
+                DeviceType.ARBIN,
+                DeviceType.NEWARE,
+                DeviceType.BIOLOGIC,
+                DeviceType.MACCOR,
+                DeviceType.GENERIC
+            ],
+            format_func=lambda x: x.value.title(),
+            help="Select the type of battery tester that generated this data",
+            key="device_type"
+        )
+        
         # Main data file upload
         uploaded_file = st.file_uploader(
-            "Upload Basytec data file",
+            f"Upload {device_type.value.title()} data file",
             type=['txt', 'csv'],
             help="Upload your battery test data file",
             key="main_data_file"
@@ -45,11 +62,20 @@ class DataInputComponent:
                     tmp_file.write(uploaded_file.getvalue())
                     tmp_path = tmp_file.name
                 
-                with st.spinner("Loading file..."):
+                with st.spinner(f"Loading {device_type.value.title()} file..."):
                     try:
-                        loader = DataLoader()
+                        loader = DataLoader(device_type=device_type)
                         st.session_state.raw_data = loader.load_file(tmp_path)
                         st.success(f"✅ File loaded: {uploaded_file.name}")
+                        
+                        # Show device-specific info
+                        if device_type == DeviceType.BASYTEC:
+                            st.info("🔧 Using Basytec profile: European decimal format (comma separator)")
+                        elif device_type == DeviceType.ARBIN:
+                            st.info("🔧 Using Arbin profile: Time in seconds will be converted to hours")
+                        elif device_type == DeviceType.NEWARE:
+                            st.info("🔧 Using Neware profile")
+                            
                     except Exception as e:
                         st.error(f"Error loading file: {str(e)}")
                         return None
@@ -109,8 +135,21 @@ class DataInputComponent:
         
         if test_plan_file:
             try:
-                # Read and decode file content
-                content = test_plan_file.read().decode('utf-8')
+                # Read file content with proper encoding handling
+                raw_bytes = test_plan_file.read()
+                
+                # Try different encodings
+                content = None
+                for encoding in ['utf-8', 'iso-8859-1', 'latin-1', 'cp1252']:
+                    try:
+                        content = raw_bytes.decode(encoding)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                
+                if content is None:
+                    # Fallback: decode with errors ignored
+                    content = raw_bytes.decode('utf-8', errors='ignore')
                 
                 # Parse test plan
                 parser = TestPlanParser()
