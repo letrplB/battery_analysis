@@ -11,8 +11,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import io
 import traceback
-from analyzer import parse_header, load_data, analyze_cycles, export_results
-from dqdu_analyzer import compute_dqdu_analysis, get_available_cycles_for_dqdu
+from legacy.analyzer import parse_header, load_data, analyze_cycles, export_results
+from analysis_modes.dqdu_analysis import compute_dqdu_analysis, get_available_cycles_for_dqdu
 import re
 from typing import List, Dict, Tuple
 

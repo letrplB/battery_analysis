@@ -9,11 +9,7 @@ from core.data_models import (
 )
 from analysis_modes.standard_cycle import StandardCycleAnalyzer
 
-# Import existing dQ/dU analyzer (to be refactored later)
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-from dqdu_analyzer import compute_dqdu_analysis
+from analysis_modes.dqdu_analysis import compute_dqdu_analysis
 
 logger = logging.getLogger(__name__)
 
