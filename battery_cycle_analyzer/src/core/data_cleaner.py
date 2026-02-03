@@ -352,11 +352,13 @@ class DataCleaner:
     
     def _convert_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert columns to appropriate data types"""
-        
+
         # Numeric columns - most should already be numeric from parser
-        numeric_cols = ['Time[h]', 'U[V]', 'I[A]', 'Ah[Ah]', 
-                       'T1[°C]', 'T2[°C]', 'State', 'Cyc', 'DataSet']
-        
+        # Include capacity columns that may be renamed from device-specific names
+        numeric_cols = ['Time[h]', 'U[V]', 'I[A]', 'Ah[Ah]',
+                       'T1[°C]', 'T2[°C]', 'State', 'Cyc', 'DataSet',
+                       'Ah-Cyc-Charge', 'Ah-Cyc-Discharge', 'Ah-Step', 'Wh[Wh]']
+
         for col in numeric_cols:
             if col in df.columns and df[col].dtype == object:
                 # Only convert if still string type
