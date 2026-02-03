@@ -387,7 +387,13 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
                 dq_du = calculate_dq_du(v_interp, q_interp, smoothing, phase_type=half_cycle_type)
             else:
                 dq_du = calculate_dq_du(v_interp, q_interp, None, phase_type=half_cycle_type)
-            
+
+            # Normalize by active material weight to get mAh/g/V
+            active_mass = params.get('active_material_weight', 1.0)  # Default 1g if not provided
+            if active_mass > 0:
+                dq_du = dq_du / active_mass
+                logging.debug(f"Normalized dQ/dU by active mass {active_mass:.4f} g")
+
             # Check if dQ/dU has valid values
             if np.all(np.isnan(dq_du)) or len(dq_du) == 0:
                 logging.warning(f"All dQ/dU values are NaN for cycle {cycle_num}")
