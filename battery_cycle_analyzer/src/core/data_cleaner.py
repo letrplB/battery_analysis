@@ -137,6 +137,37 @@ class DataCleaner:
                 'Step': 'State'
             },
             required_columns=['Time', 'Voltage', 'Current']
+        ),
+
+        DeviceType.BIOLOGIC: DeviceProfile(
+            name="BioLogic BT-Lab",
+            device_type=DeviceType.BIOLOGIC,
+            decimal_separator=DecimalSeparator.COMMA,  # European format
+            delimiter="\t",
+            encoding="utf-8",
+            header_prefix="",  # BT-Lab uses different header format (not ~)
+            datetime_format="%m/%d/%Y %H:%M:%S",
+            column_mappings={
+                # BT-Lab processed export column names
+                'cycle number': 'Cyc',
+                'Ecell/V': 'U[V]',
+                '<I>/mA': 'I[A]',  # Need mA -> A conversion
+                'Capacity/mA.h': 'Ah[Ah]',  # Need mAh -> Ah conversion
+                'ox/red': 'ox_red',  # Intermediate, mapped to Command later
+                'Q discharge/mA.h': 'Ah-Cyc-Discharge',
+                'Q charge/mA.h': 'Ah-Cyc-Charge',
+                'Efficiency/%': 'Efficiency',
+                'counter inc.': 'counter_inc',
+                'control changes': 'control_changes',
+                # Alternative column names from different BT-Lab exports (raw data)
+                'time/s': 'Time[h]',  # Need s -> h conversion
+                'Ewe/V': 'U[V]',
+                'I/mA': 'I[A]',
+                '(Q-Qo)/mA.h': 'Ah[Ah]',
+            },
+            has_datetime_with_space=False,
+            has_metadata_header=True,
+            required_columns=['U[V]', 'I[A]']  # After mapping
         )
     }
     
@@ -201,11 +232,11 @@ class DataCleaner:
     ) -> str:
         """
         Clean raw text data before parsing
-        
+
         Args:
             text: Raw text content
             decimal_separator: Decimal separator to use
-            
+
         Returns:
             Cleaned text ready for parsing
         """
@@ -213,7 +244,7 @@ class DataCleaner:
         if self.device_type == DeviceType.BASYTEC:
             lines = text.split('\n')
             cleaned_lines = []
-            
+
             for line in lines:
                 if line.startswith('~'):
                     # Don't modify header/metadata lines
@@ -223,13 +254,57 @@ class DataCleaner:
                     # Basytec uses tabs as delimiters, so commas are ONLY decimals
                     cleaned_line = line.replace(',', '.')
                     cleaned_lines.append(cleaned_line)
-            
+
             text = '\n'.join(cleaned_lines)
-        
+
+        # For BioLogic BT-Lab, also uses comma decimals with tab delimiters
+        elif self.device_type == DeviceType.BIOLOGIC:
+            lines = text.split('\n')
+            cleaned_lines = []
+
+            # Find where data starts (after "Nb header lines : XX")
+            header_lines = self._get_biologic_header_lines(text)
+
+            for i, line in enumerate(lines):
+                if i < header_lines:
+                    # Keep header lines as-is
+                    cleaned_lines.append(line)
+                else:
+                    # For data lines: replace comma decimals with dots
+                    # BT-Lab uses tabs as delimiters, so commas are ONLY decimals
+                    cleaned_line = line.replace(',', '.')
+                    cleaned_lines.append(cleaned_line)
+
+            text = '\n'.join(cleaned_lines)
+
         # Fix encoding issues (temperature symbols, etc.)
         text = self._fix_encoding_issues(text)
-        
+
         return text
+
+    def _get_biologic_header_lines(self, text: str) -> int:
+        """
+        Get the number of header lines from BioLogic BT-Lab file
+
+        BT-Lab files have 'Nb header lines : XX' on line 2
+
+        Args:
+            text: Raw file text
+
+        Returns:
+            Number of header lines (default 0 if not found)
+        """
+        lines = text.split('\n')
+        for line in lines[:10]:  # Check first 10 lines
+            if 'Nb header lines' in line:
+                try:
+                    # Extract number after colon
+                    parts = line.split(':')
+                    if len(parts) >= 2:
+                        return int(parts[1].strip())
+                except (ValueError, IndexError):
+                    pass
+        return 0
     
     def _fix_decimal_separators(
         self,
@@ -296,18 +371,18 @@ class DataCleaner:
     
     def _apply_device_specific_cleaning(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply device-specific cleaning rules"""
-        
+
         if self.device_type == DeviceType.BASYTEC:
             # Fix temperature column headers
             df = self._fix_temperature_columns(df)
-            
+
             # Ensure Command column is string and lowercase for consistency
             if 'Command' in df.columns:
                 # Convert to string first (in case it's object or mixed type)
                 df['Command'] = df['Command'].astype(str)
                 # Then convert to lowercase
                 df['Command'] = df['Command'].str.lower()
-        
+
         elif self.device_type == DeviceType.ARBIN:
             # Create Command column from step types if needed
             if 'Command' not in df.columns and 'Step_Type' in df.columns:
@@ -316,7 +391,75 @@ class DataCleaner:
                     'CC_DChg': 'Discharge',
                     'Rest': 'Pause'
                 }).fillna('Unknown')
-        
+
+        elif self.device_type == DeviceType.BIOLOGIC:
+            df = self._apply_biologic_cleaning(df)
+
+        return df
+
+    def _apply_biologic_cleaning(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply BioLogic BT-Lab specific cleaning and unit conversions"""
+
+        # First, ensure numeric columns are actually numeric
+        # (they may still be strings after initial parsing)
+        numeric_cols_biologic = ['I[A]', 'U[V]', 'Ah[Ah]', 'Ah-Cyc-Discharge',
+                                  'Ah-Cyc-Charge', 'Cyc', 'ox_red', 'Efficiency']
+        for col in numeric_cols_biologic:
+            if col in df.columns and df[col].dtype == object:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Unit conversion: mA -> A for current
+        if 'I[A]' in df.columns:
+            df['I[A]'] = df['I[A]'] / 1000.0
+            logger.debug("Converted current from mA to A")
+
+        # Unit conversion: mAh -> Ah for capacity columns
+        capacity_cols = ['Ah[Ah]', 'Ah-Cyc-Discharge', 'Ah-Cyc-Charge']
+        for col in capacity_cols:
+            if col in df.columns:
+                df[col] = df[col] / 1000.0
+                logger.debug(f"Converted {col} from mAh to Ah")
+
+        # Map ox/red to Command column based on current sign
+        # ox/red: 1 = oxidation (charge), 0 = reduction (discharge) or rest
+        if 'ox_red' in df.columns:
+            # Determine command based on ox/red flag and current
+            def map_command(row):
+                ox_red = row.get('ox_red', 0)
+                current = row.get('I[A]', 0)
+
+                if ox_red == 1:
+                    return 'charge'
+                elif current < -1e-9:  # Small threshold for numerical noise
+                    return 'discharge'
+                elif abs(current) < 1e-9:
+                    return 'pause'
+                else:
+                    return 'charge'  # Positive current with ox_red=0
+
+            df['Command'] = df.apply(map_command, axis=1)
+            logger.debug("Created Command column from ox/red indicator")
+
+        # Generate synthetic time if not present (for processed exports)
+        # This uses row index as proxy - data points are typically at regular intervals
+        if 'Time[h]' not in df.columns:
+            # Check metadata for sampling interval, default to ~20s based on typical BT-Lab settings
+            # For processed exports, we use row index as a monotonic "time" proxy
+            df['Time[h]'] = df.index * (20.0 / 3600.0)  # 20 seconds per point -> hours
+            logger.warning("No time column found in BioLogic data. Generated synthetic time "
+                          "from row index (assuming ~20s intervals). This is approximate.")
+
+        # Convert time from seconds to hours if we have time/s column
+        # (This would be from raw BT-Lab exports)
+        if 'time/s' in df.columns and 'Time[h]' not in df.columns:
+            df['Time[h]'] = df['time/s'] / 3600.0
+            logger.debug("Converted time from seconds to hours")
+
+        # Ensure Cyc column is integer (it comes as scientific notation float)
+        if 'Cyc' in df.columns:
+            df['Cyc'] = df['Cyc'].round().astype(int)
+            logger.debug("Converted Cyc to integer")
+
         return df
     
     def _validate_required_columns(self, df: pd.DataFrame) -> None:
