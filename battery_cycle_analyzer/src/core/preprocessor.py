@@ -104,12 +104,26 @@ class DataPreprocessor:
         """Detect cycle boundaries using the Cyc column directly
 
         Used for data sources like BioLogic that have pre-defined cycle numbers.
+        Includes cycle 0 if it contains actual cycling data (charge/discharge).
         """
         boundaries = []
 
-        # Get unique cycle numbers (excluding 0 which is often initialization)
+        # Get unique cycle numbers
         cycle_numbers = sorted(df['Cyc'].unique())
-        cycle_numbers = [c for c in cycle_numbers if c > 0]
+
+        # Check if cycle 0 has real cycling data (not just initialization)
+        # Include it if it has both charge and discharge capacity
+        if 0 in cycle_numbers:
+            cycle_0_data = df[df['Cyc'] == 0]
+            has_discharge = 'Ah-Cyc-Discharge' in df.columns and cycle_0_data['Ah-Cyc-Discharge'].max() > 0
+            has_charge = 'Ah-Cyc-Charge' in df.columns and cycle_0_data['Ah-Cyc-Charge'].max() > 0
+
+            if not (has_discharge or has_charge):
+                # Cycle 0 has no real cycling data, exclude it
+                cycle_numbers = [c for c in cycle_numbers if c > 0]
+                self.logger.info("Excluding cycle 0 (no cycling data)")
+            else:
+                self.logger.info("Including cycle 0 (contains cycling data)")
 
         for cycle_num in cycle_numbers:
             cycle_mask = df['Cyc'] == cycle_num
@@ -263,13 +277,22 @@ class DataPreprocessor:
             'Ah-Cyc-Charge' in df.columns
         )
 
+        # Check if we should use actual cycle numbers from data (BioLogic style)
+        use_data_cycle_numbers = 'Cyc' in df.columns and has_precalc_capacity
+
         if has_precalc_capacity:
             self.logger.info("Using pre-calculated capacity columns (Ah-Cyc-Discharge, Ah-Cyc-Charge)")
 
         cycle_data = []
 
-        for cycle_num, (start_idx, end_idx) in enumerate(boundaries, 1):
+        for idx, (start_idx, end_idx) in enumerate(boundaries):
             cycle_df = df.iloc[start_idx:end_idx]
+
+            # Get cycle number - use actual from data if available, otherwise use 1-based index
+            if use_data_cycle_numbers and len(cycle_df) > 0:
+                cycle_num = int(cycle_df['Cyc'].iloc[0])
+            else:
+                cycle_num = idx + 1
 
             # Calculate capacities - use pre-calculated if available, otherwise integrate
             if has_precalc_capacity:
