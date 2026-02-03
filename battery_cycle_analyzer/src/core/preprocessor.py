@@ -65,19 +65,28 @@ class DataPreprocessor:
         column_mapping: Dict[str, str] = None
     ) -> List[Tuple[int, int]]:
         """Detect cycle boundaries in the data"""
-        
+
         # Get actual column names from mapping
         if column_mapping is None:
             column_mapping = {}
-        
+
+        # Check for pre-defined cycle numbers (e.g., from BioLogic)
+        # If we have a Cyc column with actual cycle numbers, use that directly
+        if 'Cyc' in df.columns and df['Cyc'].nunique() > 1:
+            # Check if this looks like BioLogic data with pre-calculated capacities
+            has_precalc = 'Ah-Cyc-Discharge' in df.columns and 'Ah-Cyc-Charge' in df.columns
+            if has_precalc:
+                self.logger.info("Using cycle numbers from Cyc column (BioLogic data)")
+                return self._detect_boundaries_by_cycle_column(df)
+
         command_col = column_mapping.get('Command', 'Command')
-        
+
         # Filter to only charge and discharge commands (remove pause, etc.)
         if command_col in df.columns:
             # Debug: Check what values are in the Command column
             unique_commands = df[command_col].unique()
             self.logger.info(f"Unique commands in data: {unique_commands[:10]}")
-            
+
             df_filtered = df[df[command_col].str.lower().isin(['charge', 'discharge'])].copy()
             if len(df_filtered) == 0:
                 self.logger.warning(f"No charge/discharge data found after filtering. Command column '{command_col}' has values: {unique_commands[:10]}")
@@ -85,11 +94,34 @@ class DataPreprocessor:
         else:
             self.logger.warning(f"Command column '{command_col}' not found in data columns: {df.columns.tolist()}")
             df_filtered = df
-        
+
         if method == "State-based" and has_state:
             return self._detect_boundaries_by_state(df_filtered)
         else:
             return self._detect_boundaries_by_current(df_filtered, column_mapping)
+
+    def _detect_boundaries_by_cycle_column(self, df: pd.DataFrame) -> List[Tuple[int, int]]:
+        """Detect cycle boundaries using the Cyc column directly
+
+        Used for data sources like BioLogic that have pre-defined cycle numbers.
+        """
+        boundaries = []
+
+        # Get unique cycle numbers (excluding 0 which is often initialization)
+        cycle_numbers = sorted(df['Cyc'].unique())
+        cycle_numbers = [c for c in cycle_numbers if c > 0]
+
+        for cycle_num in cycle_numbers:
+            cycle_mask = df['Cyc'] == cycle_num
+            cycle_indices = df.index[cycle_mask]
+
+            if len(cycle_indices) > 0:
+                start_idx = cycle_indices[0]
+                end_idx = cycle_indices[-1]
+                boundaries.append((start_idx, end_idx))
+
+        self.logger.info(f"Detected {len(boundaries)} cycles from Cyc column")
+        return boundaries
     
     def _detect_boundaries_by_state(self, df: pd.DataFrame) -> List[Tuple[int, int]]:
         """Detect cycle boundaries using command transitions
@@ -202,18 +234,18 @@ class DataPreprocessor:
         column_mapping: Dict[str, str] = None
     ) -> pd.DataFrame:
         """Calculate basic metadata for each cycle"""
-        
+
         if not boundaries:
             return pd.DataFrame()
-        
+
         # Get actual column names from mapping
         if column_mapping is None:
             column_mapping = {}
-        
+
         current_col = column_mapping.get('I[A]', 'I[A]')
         time_col = column_mapping.get('Time[h]', 'Time[h]')
         voltage_col = column_mapping.get('U[V]', 'U[V]')
-        
+
         # Check if required columns exist
         if current_col not in df.columns:
             self.logger.error(f"Current column '{current_col}' not found in data columns: {df.columns.tolist()}")
@@ -224,47 +256,67 @@ class DataPreprocessor:
         if voltage_col not in df.columns:
             self.logger.error(f"Voltage column '{voltage_col}' not found in data columns: {df.columns.tolist()}")
             return pd.DataFrame()
-        
+
+        # Check for pre-calculated capacity columns (e.g., from BioLogic processed exports)
+        has_precalc_capacity = (
+            'Ah-Cyc-Discharge' in df.columns and
+            'Ah-Cyc-Charge' in df.columns
+        )
+
+        if has_precalc_capacity:
+            self.logger.info("Using pre-calculated capacity columns (Ah-Cyc-Discharge, Ah-Cyc-Charge)")
+
         cycle_data = []
-        
+
         for cycle_num, (start_idx, end_idx) in enumerate(boundaries, 1):
             cycle_df = df.iloc[start_idx:end_idx]
-            
-            # Get charge and discharge segments
-            discharge_mask = cycle_df[current_col] < 0
-            charge_mask = cycle_df[current_col] > 0
-            
-            discharge_df = cycle_df[discharge_mask]
-            charge_df = cycle_df[charge_mask]
-            
-            # Calculate capacities
-            discharge_capacity = 0
-            charge_capacity = 0
-            
-            if len(discharge_df) > 1:
-                time_h = discharge_df[time_col].values
-                current_a = np.abs(discharge_df[current_col].values)
-                discharge_capacity = np.trapezoid(current_a, time_h)
-            
-            if len(charge_df) > 1:
-                time_h = charge_df[time_col].values
-                current_a = np.abs(charge_df[current_col].values)  # Use absolute value for charge too
-                charge_capacity = np.trapezoid(current_a, time_h)
-            
+
+            # Calculate capacities - use pre-calculated if available, otherwise integrate
+            if has_precalc_capacity:
+                # Use max value of pre-calculated capacity columns within this cycle
+                discharge_capacity = cycle_df['Ah-Cyc-Discharge'].max()
+                charge_capacity = cycle_df['Ah-Cyc-Charge'].max()
+
+                # Handle NaN values
+                if pd.isna(discharge_capacity):
+                    discharge_capacity = 0
+                if pd.isna(charge_capacity):
+                    charge_capacity = 0
+            else:
+                # Integrate current over time (original method)
+                discharge_mask = cycle_df[current_col] < 0
+                charge_mask = cycle_df[current_col] > 0
+
+                discharge_df = cycle_df[discharge_mask]
+                charge_df = cycle_df[charge_mask]
+
+                discharge_capacity = 0
+                charge_capacity = 0
+
+                if len(discharge_df) > 1:
+                    time_h = discharge_df[time_col].values
+                    current_a = np.abs(discharge_df[current_col].values)
+                    discharge_capacity = np.trapezoid(current_a, time_h)
+
+                if len(charge_df) > 1:
+                    time_h = charge_df[time_col].values
+                    current_a = np.abs(charge_df[current_col].values)
+                    charge_capacity = np.trapezoid(current_a, time_h)
+
             # Calculate specific capacity
             specific_discharge = (discharge_capacity * 1000) / parameters.active_material_weight
             specific_charge = (charge_capacity * 1000) / parameters.active_material_weight
-            
+
             # Get C-rates for this cycle
             c_rate_charge = 0.333  # Default
             c_rate_discharge = 0.333  # Default
-            
+
             for start_c, end_c, charge_rate, discharge_rate in parameters.c_rates:
                 if start_c <= cycle_num <= end_c:
                     c_rate_charge = charge_rate
                     c_rate_discharge = discharge_rate
                     break
-            
+
             cycle_data.append({
                 'Cycle': cycle_num,
                 'Start_Index': start_idx,
@@ -280,7 +332,7 @@ class DataPreprocessor:
                 'Voltage_Max': cycle_df[voltage_col].max() if len(cycle_df) > 0 else 0,
                 'Duration_h': cycle_df[time_col].max() - cycle_df[time_col].min() if len(cycle_df) > 0 else 0
             })
-        
+
         return pd.DataFrame(cycle_data)
     
     def _validate_data_quality(
