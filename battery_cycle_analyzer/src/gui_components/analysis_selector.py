@@ -303,7 +303,8 @@ class AnalysisSelectorComponent:
                                 'window_size': window_size
                             },
                             'peak_detection': enable_peaks,
-                            'peak_prominence': peak_prominence
+                            'peak_prominence': peak_prominence,
+                            'active_material_weight': preprocessed_data.parameters.active_material_weight
                         }
                         
                         # Run analysis - pass cycle boundaries from preprocessing
@@ -432,7 +433,7 @@ class AnalysisSelectorComponent:
         fig.update_layout(
             title="Differential Capacity (dQ/dU) Analysis",
             xaxis_title="Voltage (V)",
-            yaxis_title="dQ/dU (mAh/V)",
+            yaxis_title="dQ/dU (mAh/g/V)",
             hovermode='x unified',
             legend=dict(
                 yanchor="top",
