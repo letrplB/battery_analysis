@@ -33,11 +33,11 @@ class PreprocessingComponent:
         # Active material weight (input in mg, converted to g internally)
         active_material_mg = st.number_input(
             "Active material weight (mg)",
-            min_value=0.1,
+            min_value=0.001,
             max_value=10000.0,
             value=35.0,
-            step=0.1,
-            format="%.1f",
+            step=0.001,
+            format="%.3f",
             help="Weight of active material in milligrams"
         )
         active_material = active_material_mg / 1000.0  # Convert mg to g
@@ -45,11 +45,11 @@ class PreprocessingComponent:
         # Theoretical capacity (input in mAh, converted to Ah internally)
         theoretical_capacity_mah = st.number_input(
             "Theoretical capacity (mAh)",
-            min_value=0.1,
+            min_value=0.001,
             max_value=10000.0,
             value=50.0,
-            step=0.1,
-            format="%.1f",
+            step=0.001,
+            format="%.3f",
             help="Theoretical capacity in milliamp-hours"
         )
         theoretical_capacity = theoretical_capacity_mah / 1000.0  # Convert mAh to Ah
