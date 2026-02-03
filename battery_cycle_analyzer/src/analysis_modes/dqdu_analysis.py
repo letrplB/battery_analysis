@@ -201,7 +201,7 @@ def apply_smoothing(data: np.ndarray, params: Dict) -> np.ndarray:
         
     method = params.get('method', 'savgol')
     
-    if method == 'savgol' or method == 'savitzky_golay':
+    if method in ('savgol', 'savitzky_golay', 'savitzky-golay'):
         window = params.get('window_size', params.get('window', 11))
         poly = params.get('poly', 3)
         # Ensure window is odd
@@ -211,8 +211,8 @@ def apply_smoothing(data: np.ndarray, params: Dict) -> np.ndarray:
         if len(data) <= window:
             return data
         return signal.savgol_filter(data, window, poly)
-    
-    elif method == 'moving_avg':
+
+    elif method in ('moving_avg', 'moving average'):
         window = params.get('window', 5)
         if len(data) <= window:
             return data
