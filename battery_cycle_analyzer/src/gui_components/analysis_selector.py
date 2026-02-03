@@ -317,21 +317,24 @@ class AnalysisSelectorComponent:
                         # Create plot from results
                         dqdu_plot = AnalysisSelectorComponent._create_dqdu_plot(dqdu_results)
                         
-                        # Prepare data for export
-                        dqdu_data_list = []
+                        # Prepare data for export in wide format
+                        # Format: |Cycle X Charge U[V]|Cycle X Charge dQ/dU|Cycle X Discharge U[V]|...
+                        dqdu_wide_data = {}
                         peak_data_list = []
-                        
+
                         for key, data in dqdu_results.items():
                             if 'error' not in data:
-                                # Add dQ/dU data
-                                for v, dq in zip(data['voltage'], data['dq_du']):
-                                    dqdu_data_list.append({
-                                        'Cycle': data['metadata']['cycle_number'],
-                                        'Phase': data['metadata']['half_cycle_type'],
-                                        'Voltage_V': v,
-                                        'dQ/dU': dq
-                                    })
-                                
+                                cycle_num = data['metadata']['cycle_number']
+                                phase = data['metadata']['half_cycle_type'].capitalize()
+
+                                # Create column names for this cycle/phase
+                                col_prefix = f"Cycle {cycle_num} {phase}"
+                                u_col = f"{col_prefix} U[V]"
+                                dq_col = f"{col_prefix} dQ/dU"
+
+                                dqdu_wide_data[u_col] = data['voltage']
+                                dqdu_wide_data[dq_col] = data['dq_du']
+
                                 # Add peak data if available
                                 if data.get('peaks') and data['peaks']['peak_indices']:
                                     for v, i, p in zip(
@@ -340,14 +343,27 @@ class AnalysisSelectorComponent:
                                         data['peaks']['prominences']
                                     ):
                                         peak_data_list.append({
-                                            'Cycle': data['metadata']['cycle_number'],
-                                            'Phase': data['metadata']['half_cycle_type'],
+                                            'Cycle': cycle_num,
+                                            'Phase': phase,
                                             'Peak_Voltage_V': v,
                                             'Peak_Intensity': i,
                                             'Prominence': p
                                         })
-                        
-                        dqdu_df = pd.DataFrame(dqdu_data_list) if dqdu_data_list else None
+
+                        # Create wide format DataFrame
+                        # Sort columns by cycle number and phase (charge before discharge)
+                        if dqdu_wide_data:
+                            dqdu_df = pd.DataFrame(dqdu_wide_data)
+                            # Reorder columns: group by cycle, then charge U, charge dQ, discharge U, discharge dQ
+                            sorted_cols = sorted(dqdu_df.columns, key=lambda x: (
+                                int(x.split()[1]),  # Cycle number
+                                0 if 'Charge' in x else 1,  # Charge before Discharge
+                                0 if 'U[V]' in x else 1  # U before dQ/dU
+                            ))
+                            dqdu_df = dqdu_df[sorted_cols]
+                        else:
+                            dqdu_df = None
+
                         peak_df = pd.DataFrame(peak_data_list) if peak_data_list else None
                         
                         # Create results object
