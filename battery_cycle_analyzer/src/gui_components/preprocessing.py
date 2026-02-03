@@ -60,18 +60,30 @@ class PreprocessingComponent:
         
         # Boundary detection
         st.subheader("Boundary Detection")
-        boundary_method = st.selectbox(
-            "Detection method",
-            ["State-based", "Zero-crossing"],
-            help="Method for detecting cycle boundaries"
-        )
-        
+
+        # Check if using BioLogic data (has pre-calculated cycles)
+        is_biologic = False
+        if 'raw_data' in st.session_state and st.session_state.raw_data is not None:
+            df = st.session_state.raw_data.data
+            is_biologic = 'Cyc' in df.columns and 'Ah-Cyc-Discharge' in df.columns
+
+        if is_biologic:
+            st.info("Using cycle numbers from data (BioLogic format). "
+                   "Boundary detection is automatic based on the Cyc column.")
+            boundary_method = "State-based"  # Not used for BioLogic, but needed for params
+        else:
+            boundary_method = st.selectbox(
+                "Detection method",
+                ["State-based", "Zero-crossing"],
+                help="Method for detecting cycle boundaries"
+            )
+
         # Baseline cycle
         baseline_cycle = st.number_input(
             "Baseline cycle for retention",
-            min_value=1,
+            min_value=0,  # Allow 0 for BioLogic data
             max_value=1000,
-            value=30,
+            value=1 if is_biologic else 30,
             help="Cycle number to use as 100% retention baseline"
         )
         
