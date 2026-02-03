@@ -30,27 +30,29 @@ class PreprocessingComponent:
         </h2>
         """, unsafe_allow_html=True)
         
-        # Active material weight
-        active_material = st.number_input(
-            "Active material weight (g)",
-            min_value=0.001,
-            max_value=10.0,
-            value=0.035,
-            step=0.001,
-            format="%.3f",
-            help="Weight of active material in grams"
+        # Active material weight (input in mg, converted to g internally)
+        active_material_mg = st.number_input(
+            "Active material weight (mg)",
+            min_value=0.1,
+            max_value=10000.0,
+            value=35.0,
+            step=0.1,
+            format="%.1f",
+            help="Weight of active material in milligrams"
         )
-        
-        # Theoretical capacity
-        theoretical_capacity = st.number_input(
-            "Theoretical capacity (Ah)",
-            min_value=0.001,
-            max_value=10.0,
-            value=0.050,
-            step=0.001,
-            format="%.3f",
-            help="Theoretical capacity in Ah"
+        active_material = active_material_mg / 1000.0  # Convert mg to g
+
+        # Theoretical capacity (input in mAh, converted to Ah internally)
+        theoretical_capacity_mah = st.number_input(
+            "Theoretical capacity (mAh)",
+            min_value=0.1,
+            max_value=10000.0,
+            value=50.0,
+            step=0.1,
+            format="%.1f",
+            help="Theoretical capacity in milliamp-hours"
         )
+        theoretical_capacity = theoretical_capacity_mah / 1000.0  # Convert mAh to Ah
         
         # C-rate configuration
         st.subheader("C-Rate Configuration")
