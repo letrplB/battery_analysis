@@ -82,8 +82,11 @@ class DataLoader:
         data = self.raw_data_parser.parse_data_from_content(
             cleaned_content, header_lines, column_header
         )
-        
-        # Step 4: Create column mapping
+
+        # Step 5: Apply device-specific cleaning (column mapping, unit conversions, etc.)
+        data = self.data_cleaner.clean_data(data)
+
+        # Step 6: Create column mapping
         column_mapping = self._create_column_mapping(data)
         
         # Step 5: Detect available features

@@ -5,7 +5,7 @@ Extracts metadata from battery test file headers.
 Handles various metadata formats and encoding issues.
 """
 
-from typing import Dict, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 import logging
 import os
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 class MetadataParser:
     """Parses metadata from battery test file headers"""
-    
-    # Known metadata field mappings
+
+    # Known metadata field mappings for Basytec
     METADATA_MAPPINGS = {
         'Date and Time of Data Converting': 'date_converting',
         'Name of Test': 'test_name',
@@ -30,6 +30,18 @@ class MetadataParser:
         'Operator (Data converting)': 'operator_converting',
         'Testplan': 'test_plan'
     }
+
+    # BioLogic BT-Lab metadata field mappings
+    BIOLOGIC_METADATA_MAPPINGS = {
+        'Electrode material': 'test_name',
+        'Acquisition started on': 'test_start',
+        'Run on channel': 'test_channel',
+        'User': 'operator_test',
+        'Device': 'additional_metadata',
+        'Mass of active material': 'additional_metadata',
+        'Characteristic mass': 'additional_metadata',
+        'Battery capacity': 'additional_metadata',
+    }
     
     @staticmethod
     def parse_header_from_content(
@@ -39,42 +51,60 @@ class MetadataParser:
     ) -> Tuple[FileMetadata, int, Optional[str]]:
         """
         Parse metadata from cleaned file content
-        
+
         Args:
             content: Cleaned file content
             file_name: Original file name
             file_size_kb: File size in KB
-            
+
         Returns:
             Tuple of (metadata, header_lines_count, column_header_line)
         """
         lines = content.split('\n')
-        
+
         metadata = FileMetadata(
             file_name=file_name,
             file_size_kb=file_size_kb,
             total_lines=len(lines)
         )
-        
+
+        # Detect file type and parse accordingly
+        if MetadataParser._is_biologic_file(content):
+            return MetadataParser._parse_biologic_header(lines, metadata)
+        else:
+            return MetadataParser._parse_basytec_header(lines, metadata)
+
+    @staticmethod
+    def _is_biologic_file(content: str) -> bool:
+        """Check if content is from a BioLogic BT-Lab file"""
+        first_lines = content[:500]
+        return 'BT-Lab ASCII FILE' in first_lines or 'Nb header lines' in first_lines
+
+    @staticmethod
+    def _parse_basytec_header(
+        lines: List[str],
+        metadata: FileMetadata
+    ) -> Tuple[FileMetadata, int, Optional[str]]:
+        """Parse Basytec format header (lines starting with ~)"""
         header_lines = 0
         column_header = None
-        
+
         # Parse header lines (lines starting with ~)
         for i, line in enumerate(lines):
             if not line.startswith('~'):
                 break
-            
+
             header_lines += 1
-            
+
             # Skip empty metadata lines
             if line.strip() == '~':
                 continue
-            
+
             # Check for column header
             if 'Time[h]' in line or 'DataSet' in line:
                 column_header = line.strip('~').strip()
                 continue
-            
+
             # Parse metadata key-value pairs
             if ':' in line:
                 key_value = line[1:].strip()  # Remove ~ prefix
@@ -82,13 +112,66 @@ class MetadataParser:
                     key, value = key_value.split(':', 1)
                     key = key.strip()
                     value = value.strip()
-                    
+
                     # Map to metadata fields
                     if key in MetadataParser.METADATA_MAPPINGS:
                         field = MetadataParser.METADATA_MAPPINGS[key]
                         setattr(metadata, field, value)
-        
-        logger.info(f"Parsed {header_lines} header lines from content")
+
+        logger.info(f"Parsed {header_lines} Basytec header lines")
+        return metadata, header_lines, column_header
+
+    @staticmethod
+    def _parse_biologic_header(
+        lines: List[str],
+        metadata: FileMetadata
+    ) -> Tuple[FileMetadata, int, Optional[str]]:
+        """Parse BioLogic BT-Lab format header"""
+        header_lines = 0
+        column_header = None
+
+        # Find number of header lines from "Nb header lines : XX"
+        for line in lines[:10]:
+            if 'Nb header lines' in line:
+                try:
+                    parts = line.split(':')
+                    if len(parts) >= 2:
+                        header_lines = int(parts[1].strip())
+                        break
+                except (ValueError, IndexError):
+                    pass
+
+        if header_lines == 0:
+            # Fallback: scan for column header
+            for i, line in enumerate(lines):
+                if 'Ecell/V' in line or 'cycle number' in line:
+                    header_lines = i + 1
+                    break
+
+        # Get column header (last line of header section)
+        if header_lines > 0 and header_lines <= len(lines):
+            column_header = lines[header_lines - 1].strip()
+
+        # Parse metadata from header lines
+        for i in range(min(header_lines, len(lines))):
+            line = lines[i].strip()
+
+            if ':' in line and not line.startswith('\t'):
+                key, _, value = line.partition(':')
+                key = key.strip()
+                value = value.strip()
+
+                # Map BioLogic metadata fields
+                if key in MetadataParser.BIOLOGIC_METADATA_MAPPINGS:
+                    field = MetadataParser.BIOLOGIC_METADATA_MAPPINGS[key]
+                    if field == 'additional_metadata':
+                        if metadata.additional_metadata is None:
+                            metadata.additional_metadata = {}
+                        metadata.additional_metadata[key] = value
+                    else:
+                        setattr(metadata, field, value)
+
+        logger.info(f"Parsed {header_lines} BioLogic header lines")
         return metadata, header_lines, column_header
     
     @staticmethod

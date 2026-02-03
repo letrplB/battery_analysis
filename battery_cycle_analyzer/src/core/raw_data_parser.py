@@ -114,30 +114,36 @@ class RawDataParser:
     
     @staticmethod
     def _find_header_line(
-        lines: List[str], 
+        lines: List[str],
         skip_rows: int,
         provided_header: Optional[str] = None
     ) -> Optional[str]:
         """
         Find the column header line in the file
-        
+
         Args:
             lines: All lines from the file
             skip_rows: Number of header rows
             provided_header: Optional pre-parsed header
-            
+
         Returns:
             Header line string or None
         """
         if provided_header:
             return provided_header
-        
-        # Look for header line (usually the last line with ~)
+
+        # Check for BioLogic format (column header at skip_rows - 1, no ~ prefix)
+        if skip_rows > 0 and skip_rows <= len(lines):
+            potential_header = lines[skip_rows - 1].strip()
+            if 'Ecell/V' in potential_header or 'cycle number' in potential_header:
+                return potential_header
+
+        # Look for Basytec header line (usually the last line with ~)
         for i in range(min(skip_rows, len(lines)) - 1, -1, -1):
             if i < len(lines) and lines[i].startswith('~'):
                 if 'Time[h]' in lines[i] or 'DataSet' in lines[i]:
                     return lines[i].strip('~').strip()
-        
+
         return None
     
     @staticmethod
@@ -416,17 +422,25 @@ class RawDataParser:
     def _validate_columns(df: pd.DataFrame) -> None:
         """
         Validate that required columns are present
-        
+
         Args:
             df: DataFrame to validate
-            
+
         Raises:
             ValueError: If required columns are missing
         """
-        missing_cols = []
-        for col in RawDataParser.REQUIRED_COLUMNS:
-            if col not in df.columns:
-                missing_cols.append(col)
-        
-        if missing_cols:
-            raise ValueError(f"Required columns missing: {missing_cols}")
+        # Define column alternatives for different device formats
+        # At least one from each group must be present
+        required_column_groups = {
+            'voltage': ['U[V]', 'Ecell/V', 'Ewe/V', 'Voltage', 'Voltage(V)'],
+            'current': ['I[A]', '<I>/mA', 'I/mA', 'Current', 'Current(A)'],
+        }
+
+        missing_groups = []
+        for group_name, alternatives in required_column_groups.items():
+            if not any(alt in df.columns for alt in alternatives):
+                missing_groups.append(f"{group_name} (expected one of: {alternatives})")
+
+        if missing_groups:
+            raise ValueError(f"Required columns missing: {missing_groups}. "
+                           f"Available columns: {list(df.columns)}")

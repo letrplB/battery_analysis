@@ -87,6 +87,9 @@ class DataInputComponent:
                             st.info("Using Arbin profile: Time in seconds will be converted to hours")
                         elif device_type == DeviceType.NEWARE:
                             st.info("Using Neware profile")
+                        elif device_type == DeviceType.BIOLOGIC:
+                            st.info("Using BioLogic BT-Lab profile: Pre-calculated capacity data. "
+                                   "Current (mA→A) and capacity (mAh→Ah) units converted automatically.")
                             
                     except Exception as e:
                         st.error(f"Error loading file: {str(e)}")

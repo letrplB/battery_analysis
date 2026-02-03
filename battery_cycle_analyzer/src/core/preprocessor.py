@@ -244,12 +244,12 @@ class DataPreprocessor:
             if len(discharge_df) > 1:
                 time_h = discharge_df[time_col].values
                 current_a = np.abs(discharge_df[current_col].values)
-                discharge_capacity = np.trapz(current_a, time_h)
+                discharge_capacity = np.trapezoid(current_a, time_h)
             
             if len(charge_df) > 1:
                 time_h = charge_df[time_col].values
                 current_a = np.abs(charge_df[current_col].values)  # Use absolute value for charge too
-                charge_capacity = np.trapz(current_a, time_h)
+                charge_capacity = np.trapezoid(current_a, time_h)
             
             # Calculate specific capacity
             specific_discharge = (discharge_capacity * 1000) / parameters.active_material_weight
