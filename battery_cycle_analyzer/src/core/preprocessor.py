@@ -286,7 +286,7 @@ class DataPreprocessor:
         cycle_data = []
 
         for idx, (start_idx, end_idx) in enumerate(boundaries):
-            cycle_df = df.iloc[start_idx:end_idx]
+            cycle_df = df.iloc[start_idx:end_idx + 1]
 
             # Get cycle number - use actual from data if available, otherwise use 1-based index
             if use_data_cycle_numbers and len(cycle_df) > 0:

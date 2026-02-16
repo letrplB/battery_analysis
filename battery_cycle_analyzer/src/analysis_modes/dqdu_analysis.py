@@ -8,6 +8,7 @@ which is useful for identifying phase transitions and degradation mechanisms.
 import numpy as np
 import pandas as pd
 from scipy import interpolate, signal
+from scipy.ndimage import uniform_filter1d, gaussian_filter1d
 from typing import Dict, List, Tuple, Optional, Any
 import logging
 
@@ -57,12 +58,41 @@ def extract_cycle_data(df: pd.DataFrame, cycle_number: int, half_cycle_type: str
     
     # Filter to the specific half-cycle type
     filtered_data = cycle_data[cycle_data['Command'].str.lower() == half_cycle_type.lower()].copy()
-    
+
     if filtered_data.empty:
         raise ValueError(f"No {half_cycle_type} data found in cycle {cycle_number}")
-    
-    logger.info(f"Cycle {cycle_number} ({half_cycle_type}): {len(filtered_data)} points from index {start_idx} to {end_idx}")
-    
+
+    # Extend voltage range to the opposite phase's cutoff voltage.
+    # When current reverses (e.g. discharge→charge), the IR drop creates a
+    # voltage gap at the START of each phase. We bridge this by adding one
+    # synthetic point at the cutoff voltage with the same capacity as the
+    # first data point of the current phase (no electrochemical reaction
+    # occurs during the IR drop). This uses only data within the same cycle,
+    # and only the voltage value from the other phase — no capacity baseline
+    # mismatch regardless of whether capacity resets per phase (BioLogic)
+    # or is cumulative (Basytec).
+    other_data = cycle_data[cycle_data['Command'].str.lower() != half_cycle_type.lower()]
+    if not other_data.empty:
+        if half_cycle_type.lower() == 'charge':
+            # Charge starts at a voltage above the discharge cutoff — extend downward
+            cutoff_v = other_data['U[V]'].min()
+            if cutoff_v < filtered_data['U[V]'].min():
+                ext_row = filtered_data.iloc[[0]].copy()
+                ext_row['U[V]'] = cutoff_v
+                filtered_data = pd.concat([ext_row, filtered_data])
+                logger.debug(f"Extended charge voltage range down to {cutoff_v:.4f} V")
+        else:
+            # Discharge starts at a voltage below the charge cutoff — extend upward
+            cutoff_v = other_data['U[V]'].max()
+            if cutoff_v > filtered_data['U[V]'].max():
+                ext_row = filtered_data.iloc[[0]].copy()
+                ext_row['U[V]'] = cutoff_v
+                filtered_data = pd.concat([ext_row, filtered_data])
+                logger.debug(f"Extended discharge voltage range up to {cutoff_v:.4f} V")
+
+    logger.info(f"Cycle {cycle_number} ({half_cycle_type}): {len(filtered_data)} points, "
+                f"V=[{filtered_data['U[V]'].min():.3f}, {filtered_data['U[V]'].max():.3f}]")
+
     return filtered_data
 
 
@@ -169,12 +199,12 @@ def calculate_dq_du(voltage: np.ndarray, capacity: np.ndarray,
     # Calculate dQ/dU (differential capacity) - already in mAh/V
     dq_du = dq / dv
     
-    # Apply sign convention: discharge should be negative
-    # This is the standard convention in battery analysis
-    if phase_type.lower() == 'discharge':
-        dq_du = -np.abs(dq_du)  # Ensure discharge is negative
-    else:
-        dq_du = np.abs(dq_du)  # Ensure charge is positive
+    # Sign convention: after sorting by voltage ascending and interpolating,
+    # the natural dQ/dU sign is already correct:
+    #   - Charge: capacity increases with voltage → dQ/dU > 0
+    #   - Discharge: capacity decreases with voltage → dQ/dU < 0
+    # We do NOT use np.abs() here because it would mask real zero-crossings
+    # at the voltage extremes and create artifacts.
     
     # Check for reasonable values
     if np.all(np.abs(dq_du) < 1e-6):
@@ -210,23 +240,22 @@ def apply_smoothing(data: np.ndarray, params: Dict) -> np.ndarray:
         # Ensure we have enough points
         if len(data) <= window:
             return data
+        # Ensure poly < window (savgol requires window > polyorder)
+        if poly >= window:
+            poly = window - 1
         return signal.savgol_filter(data, window, poly)
 
     elif method in ('moving_avg', 'moving average'):
         window = params.get('window', 5)
         if len(data) <= window:
             return data
-        kernel = np.ones(window) / window
-        # Use mode='valid' and pad to maintain array size
-        smoothed = np.convolve(data, kernel, mode='valid')
-        # Pad the edges
-        pad_width = (window - 1) // 2
-        smoothed = np.pad(smoothed, (pad_width, window - 1 - pad_width), mode='edge')
-        return smoothed
+        # uniform_filter1d handles edges correctly (mode='nearest' by default)
+        # without discarding edge data like convolve(mode='valid') did
+        return uniform_filter1d(data, size=window, mode='nearest')
     
     elif method == 'gaussian':
         sigma = params.get('sigma', 1.0)
-        return signal.gaussian_filter1d(data, sigma)
+        return gaussian_filter1d(data, sigma)
     
     else:
         return data
@@ -288,8 +317,10 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
     results = {}
     
     # First pass: collect voltage ranges if we need a common range
+    # Only apply common range if explicitly enabled AND no manual voltage range is set
     voltage_ranges = []
-    if params.get('use_common_voltage_range', True):  # Default to True for better comparison
+    has_manual_range = params.get('voltage_range') is not None
+    if params.get('use_common_voltage_range', False) and not has_manual_range:
         for cycle_num, half_cycle_type in cycle_selections:
             try:
                 cycle_data = extract_cycle_data(df, cycle_num, half_cycle_type, cycle_boundaries)
@@ -297,15 +328,17 @@ def compute_dqdu_analysis(df: pd.DataFrame, cycle_selections: List[Tuple[int, st
                 voltage_ranges.append((voltage.min(), voltage.max()))
             except Exception:
                 pass
-        
+
         if voltage_ranges:
             # Find the common voltage range (intersection of all ranges)
             common_v_min = max(v_min for v_min, _ in voltage_ranges)
             common_v_max = min(v_max for _, v_max in voltage_ranges)
-            logging.info(f"Using common voltage range: {common_v_min:.3f} to {common_v_max:.3f} V")
-            # Override the voltage_range parameter
-            params = params.copy()
-            params['voltage_range'] = (common_v_min, common_v_max)
+            if common_v_min >= common_v_max:
+                logging.warning(f"Common voltage range is empty ({common_v_min:.3f} >= {common_v_max:.3f} V), skipping")
+            else:
+                logging.info(f"Using common voltage range: {common_v_min:.3f} to {common_v_max:.3f} V")
+                params = params.copy()
+                params['voltage_range'] = (common_v_min, common_v_max)
     
     for cycle_num, half_cycle_type in cycle_selections:
         try:

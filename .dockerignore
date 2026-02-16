@@ -1,0 +1,13 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+*.md
+*.png
+*.jpg
+.DS_Store
+.idea/
+.vscode/
+battery_cycle_analyzer/data/
