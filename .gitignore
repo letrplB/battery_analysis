@@ -58,8 +58,8 @@ results/
 *.jpeg
 *.gif
 
-# Streamlit
-.streamlit/
+# Streamlit (keep .streamlit/config.toml for deployment)
+.streamlit/secrets.toml
 
 # Jupyter Notebooks
 .ipynb_checkpoints/

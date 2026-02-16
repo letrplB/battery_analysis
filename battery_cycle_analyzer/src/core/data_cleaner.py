@@ -425,22 +425,20 @@ class DataCleaner:
         # Map ox/red to Command column based on current sign
         # ox/red: 1 = oxidation (charge), 0 = reduction (discharge) or rest
         if 'ox_red' in df.columns:
-            # Determine command based on ox/red flag and current
-            def map_command(row):
-                ox_red = row.get('ox_red', 0)
-                current = row.get('I[A]', 0)
+            # Use a current threshold relative to the actual test currents.
+            # Transition/rest rows have currents ~1000x smaller than real
+            # charge/discharge currents — a 1% threshold reliably separates them.
+            max_abs_current = df['I[A]'].abs().max()
+            current_threshold = max(max_abs_current * 0.01, 1e-7)
 
-                if ox_red == 1:
-                    return 'charge'
-                elif current < -1e-9:  # Small threshold for numerical noise
-                    return 'discharge'
-                elif abs(current) < 1e-9:
-                    return 'pause'
-                else:
-                    return 'charge'  # Positive current with ox_red=0
-
-            df['Command'] = df.apply(map_command, axis=1)
-            logger.debug("Created Command column from ox/red indicator")
+            # Vectorized command mapping: check current magnitude FIRST so
+            # transition rows with near-zero current are always 'pause',
+            # regardless of ox_red flag (which can be stale at transitions).
+            df['Command'] = 'charge'  # default for ox_red=1 with current
+            df.loc[df['I[A]'].abs() < current_threshold, 'Command'] = 'pause'
+            df.loc[df['I[A]'] < -current_threshold, 'Command'] = 'discharge'
+            logger.debug(f"Created Command column from ox/red + current "
+                        f"(threshold={current_threshold:.2e} A)")
 
         # Generate synthetic time if not present (for processed exports)
         # This uses row index as proxy - data points are typically at regular intervals

@@ -207,24 +207,40 @@ class AnalysisSelectorComponent:
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write("**Voltage Filtering:**")
+                st.write("**Voltage Range:**")
                 use_voltage_filter = st.checkbox(
-                    "Apply voltage range filter",
+                    "Manual voltage range",
                     value=False,
-                    key="dq_voltage_filter"
+                    key="dq_voltage_filter",
+                    help="Set a custom voltage window for the analysis"
                 )
-                
+
+                # Derive voltage bounds from the loaded data
+                v_data = preprocessed_data.raw_data.data['U[V]']
+                data_v_min = float(v_data.min())
+                data_v_max = float(v_data.max())
+                # Round outward to nearest 0.1 V for clean slider bounds
+                slider_v_min = round(data_v_min - 0.05, 1)
+                slider_v_max = round(data_v_max + 0.05, 1)
+
                 if use_voltage_filter:
                     voltage_range = st.slider(
                         "Voltage range (V)",
-                        min_value=0.0,
-                        max_value=5.0,
-                        value=(2.5, 4.2),
-                        step=0.1,
+                        min_value=slider_v_min,
+                        max_value=slider_v_max,
+                        value=(round(data_v_min, 1), round(data_v_max, 1)),
+                        step=0.01,
                         key="dq_voltage_range"
                     )
                 else:
                     voltage_range = None
+
+                use_common_range = st.checkbox(
+                    "Common voltage range across cycles",
+                    value=False,
+                    key="dq_common_range",
+                    help="Clip all cycles to the intersection of their voltage ranges (for direct comparison)"
+                )
                 
                 st.write("**Smoothing:**")
                 smoothing_method = st.selectbox(
@@ -298,6 +314,7 @@ class AnalysisSelectorComponent:
                         params = {
                             'n_points': interp_points,
                             'voltage_range': voltage_range if use_voltage_filter else None,
+                            'use_common_voltage_range': use_common_range,
                             'smoothing': {
                                 'method': smoothing_method.lower(),
                                 'window_size': window_size
