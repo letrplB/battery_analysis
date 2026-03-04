@@ -431,12 +431,19 @@ class DataCleaner:
             max_abs_current = df['I[A]'].abs().max()
             current_threshold = max(max_abs_current * 0.01, 1e-7)
 
-            # Vectorized command mapping: check current magnitude FIRST so
-            # transition rows with near-zero current are always 'pause',
-            # regardless of ox_red flag (which can be stale at transitions).
-            df['Command'] = 'charge'  # default for ox_red=1 with current
-            df.loc[df['I[A]'].abs() < current_threshold, 'Command'] = 'pause'
-            df.loc[df['I[A]'] < -current_threshold, 'Command'] = 'discharge'
+            # Vectorized command mapping using np.select:
+            # When current and ox_red disagree (positive current but ox_red=0),
+            # mark as 'pause' to exclude transition rows from both phases.
+            current = df['I[A]']
+            ox_red = df['ox_red']
+            conditions = [
+                current.abs() < current_threshold,       # near-zero current
+                current < -current_threshold,             # negative current
+                (current > current_threshold) & (ox_red == 1),  # positive + oxidation
+                (current > current_threshold) & (ox_red == 0),  # positive + reduction (disagree)
+            ]
+            choices = ['pause', 'discharge', 'charge', 'pause']
+            df['Command'] = np.select(conditions, choices, default='pause')
             logger.debug(f"Created Command column from ox/red + current "
                         f"(threshold={current_threshold:.2e} A)")
 

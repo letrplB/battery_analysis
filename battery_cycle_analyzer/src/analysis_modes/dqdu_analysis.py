@@ -62,33 +62,26 @@ def extract_cycle_data(df: pd.DataFrame, cycle_number: int, half_cycle_type: str
     if filtered_data.empty:
         raise ValueError(f"No {half_cycle_type} data found in cycle {cycle_number}")
 
-    # Extend voltage range to the opposite phase's cutoff voltage.
-    # When current reverses (e.g. discharge→charge), the IR drop creates a
-    # voltage gap at the START of each phase. We bridge this by adding one
-    # synthetic point at the cutoff voltage with the same capacity as the
-    # first data point of the current phase (no electrochemical reaction
-    # occurs during the IR drop). This uses only data within the same cycle,
-    # and only the voltage value from the other phase — no capacity baseline
-    # mismatch regardless of whether capacity resets per phase (BioLogic)
-    # or is cumulative (Basytec).
-    other_data = cycle_data[cycle_data['Command'].str.lower() != half_cycle_type.lower()]
-    if not other_data.empty:
-        if half_cycle_type.lower() == 'charge':
-            # Charge starts at a voltage above the discharge cutoff — extend downward
-            cutoff_v = other_data['U[V]'].min()
-            if cutoff_v < filtered_data['U[V]'].min():
-                ext_row = filtered_data.iloc[[0]].copy()
-                ext_row['U[V]'] = cutoff_v
-                filtered_data = pd.concat([ext_row, filtered_data])
-                logger.debug(f"Extended charge voltage range down to {cutoff_v:.4f} V")
-        else:
-            # Discharge starts at a voltage below the charge cutoff — extend upward
-            cutoff_v = other_data['U[V]'].max()
-            if cutoff_v > filtered_data['U[V]'].max():
-                ext_row = filtered_data.iloc[[0]].copy()
-                ext_row['U[V]'] = cutoff_v
-                filtered_data = pd.concat([ext_row, filtered_data])
-                logger.debug(f"Extended discharge voltage range up to {cutoff_v:.4f} V")
+    # Enforce voltage monotonicity: trim tail where voltage reverses direction.
+    # Transition rows at phase boundaries can cause the voltage to briefly
+    # move in the wrong direction, creating spike artifacts in dQ/dU.
+    voltage_vals = filtered_data['U[V]'].values
+    if half_cycle_type.lower() == 'charge':
+        # Charge: voltage should increase. Trim after last occurrence of max voltage
+        # (last occurrence preserves constant-voltage plateaus).
+        v_max_idx = np.where(voltage_vals == voltage_vals.max())[0][-1]
+        if v_max_idx < len(voltage_vals) - 1:
+            filtered_data = filtered_data.iloc[:v_max_idx + 1].copy()
+            logger.debug(f"Trimmed {len(voltage_vals) - v_max_idx - 1} declining points "
+                        f"after charge voltage peak")
+    else:
+        # Discharge: voltage should decrease. Trim after last occurrence of min voltage
+        # (last occurrence preserves constant-voltage plateaus).
+        v_min_idx = np.where(voltage_vals == voltage_vals.min())[0][-1]
+        if v_min_idx < len(voltage_vals) - 1:
+            filtered_data = filtered_data.iloc[:v_min_idx + 1].copy()
+            logger.debug(f"Trimmed {len(voltage_vals) - v_min_idx - 1} rising points "
+                        f"after discharge voltage minimum")
 
     logger.info(f"Cycle {cycle_number} ({half_cycle_type}): {len(filtered_data)} points, "
                 f"V=[{filtered_data['U[V]'].min():.3f}, {filtered_data['U[V]'].max():.3f}]")

@@ -85,6 +85,7 @@ class DataLoader:
 
         # Step 5: Apply device-specific cleaning (column mapping, unit conversions, etc.)
         data = self.data_cleaner.clean_data(data)
+        data = data.reset_index(drop=True)
 
         # Step 6: Create column mapping
         column_mapping = self._create_column_mapping(data)
